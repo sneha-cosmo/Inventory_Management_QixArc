@@ -1,0 +1,5 @@
+{
+  "name": "Inventory Reorder & Variance System",
+  "description": "A comprehensive inventory management system with reorder prediction and production cost variance analysis.",
+  "requestFramePermissions": []
+}
