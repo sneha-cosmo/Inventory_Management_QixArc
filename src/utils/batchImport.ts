@@ -186,6 +186,7 @@ export interface ValidatedBatchRow {
     diffDays: number;
     badgeClass: string;
     label: string;
+    statusLabel: string;
   };
   isValid: boolean;
   errors: string[];
@@ -383,7 +384,8 @@ export function validateBulkImportBatches(
       status: 'Healthy' as ExpiryStatus,
       diffDays: 999,
       badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      label: 'Healthy'
+      label: 'Healthy',
+      statusLabel: 'Healthy (999d left)'
     };
 
     if (parsedExp.dateString) {

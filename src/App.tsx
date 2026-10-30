@@ -4383,7 +4383,7 @@ function BarcodeDisplay({ value }: { value: string }) {
 function ScannerDialog({ inventory, onScan, trigger }: { 
   inventory: InventoryItem[], 
   onScan: (item: InventoryItem) => void,
-  trigger?: React.ReactNode
+  trigger?: React.ReactElement;
 }) {
   const [open, setOpen] = useState(false);
   const [manualCode, setManualCode] = useState('');
@@ -4403,14 +4403,16 @@ function ScannerDialog({ inventory, onScan, trigger }: {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={trigger || <button className="flex items-center gap-2 p-3 bg-white border border-gray-200 rounded-2xl shadow-sm text-gray-500 hover:text-indigo-600 hover:border-indigo-200 transition-all active:scale-95" />}>
-        {!trigger ? (
-          <>
-            <Scan size={20} />
-            <span className="text-sm font-semibold pr-1">Finder</span>
-          </>
-        ) : undefined}
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          trigger || (
+            <button className="flex items-center gap-2 p-3 bg-white border border-gray-200 rounded-2xl shadow-sm text-gray-500 hover:text-indigo-600 hover:border-indigo-200 transition-all active:scale-95 cursor-pointer">
+              <Scan size={20} />
+              <span className="text-sm font-semibold pr-1">Finder</span>
+            </button>
+          )
+        }
+      />
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -4466,7 +4468,7 @@ function ViewInvoiceDialog({ invoice, order, customer, inventory, trigger, onGen
   order?: SalesOrder;
   customer?: Customer;
   inventory: InventoryItem[];
-  trigger: React.ReactNode;
+  trigger: React.ReactElement;
   onGenerateIRN?: (invoiceId: string) => void;
 }) {
   if (!invoice || !order) return null;

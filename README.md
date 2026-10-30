@@ -1,7 +1,28 @@
-# Inventory Management System - Bulk Import
+# Inventory Reorder & Variance System (React SPA)
 
-## Bulk Import Feature
-The Bulk Import feature allows Admins and Inventory Managers to import inventory items in bulk from CSV and Excel spreadsheets directly in the browser.
+A comprehensive React application built with TypeScript, Vite, Tailwind CSS, Base UI, and Recharts. The application provides warehouse inventory management, manufacturing order cost variance tracking, predictive stock reordering, batch and expiration tracking, multi-branch synchronization, FIFO valuation, GST (GSTR-1) compliance, and role-based access control.
+
+## Technology Stack
+- **Framework**: React 18 SPA (TypeScript)
+- **Bundler & Dev Server**: Vite (listening on `0.0.0.0:3000`)
+- **Styling**: Tailwind CSS v4 with Shadcn Nova design tokens
+- **Component Primitives**: Base UI (`@base-ui/react`), Lucide React icons
+- **Data Visualization**: Recharts (Responsive bar charts, variance trackers, slab distributions)
+- **Data Processing**: PapaParse (CSV streaming), XLSX (Excel parser), math-based EAN-13 barcode generation
+
+## Core Features
+1. **Item Master & Logistics Parameters**: Real-time inventory tracking across multiple warehouses, minimum thresholds, safety stocks, daily consumption rates, and lead times.
+2. **Predictive Reorder Engine**: Automated reorder recommendations with calculated EOQ and lead time buffers.
+3. **Batch & Expiry Management**: Multi-batch tracking with expiration countdowns, status bands (Expired, Critical, Near Expiry, Healthy), and quarantine workflows.
+4. **Production Planning & Variance Analysis**: Planned vs. actual material rate and consumption tracking with manufacturing efficiency KPIs.
+5. **Multi-Warehouse & Branch Sync**: Inter-warehouse stock transfers, tracking IDs, in-transit status monitoring, and sync latency metrics.
+6. **GST Portal & Easy Tax Filing**: Automated GSTR-1 preparation, Table 4A (B2B), Table 5 & 7 (B2C), Table 12 (HSN/SAC summary), ITC offset reconciliation, and GSTN-compliant JSON / CSV export.
+7. **Tally ERP Integration & Ledger Sync**: Automated voucher generation and XML export for Tally accounting software.
+8. **Bulk & Batch Spreadsheets Importer**: Drag-and-drop CSV/XLSX import wizard with column auto-matching, inline cell validation, formula-injection defense, and non-blocking chunked processing.
+9. **In-App Notification Center**: Deduplicated alerts for low stock, expiring lots, overdue invoices, and delayed transit.
+10. **Role-Based Access Control (RBAC)**: Fine-grained permissions for Admin, Inventory Manager, Production Supervisor, Billing Clerk, and Staff Viewer.
+11. **Bilingual Support**: Instant toggle between English and Tamil (தமிழ்).
+
 
 ### How to Use It
 1. Navigate to **Item Master** (Inventory page).

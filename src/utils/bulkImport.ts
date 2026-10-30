@@ -87,7 +87,10 @@ export function validateEan13CheckDigit(code: string): boolean {
   const cleaned = code.trim();
   if (!/^\d{13}$/.test(cleaned)) return false;
   if (/^(\d)\1{12}$/.test(cleaned)) return false;
-  return true;
+  const body = cleaned.substring(0, 12);
+  const expectedCheck = calculateEan13CheckDigit(body);
+  const actualCheck = parseInt(cleaned[12], 10);
+  return expectedCheck === actualCheck;
 }
 
 export const validateBarcode = validateEan13CheckDigit;

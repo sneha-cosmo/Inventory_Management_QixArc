@@ -150,7 +150,8 @@ export const LOCALES = {
     enableAlertTypes: "Enabled Alert Channels",
     saveSettings: "Save Preferences",
     settingsUpdatedAudit: "Notification parameters updated",
-    permissionDeniedSettings: "Only Admin and Inventory Manager can modify notification parameters."
+    permissionDeniedSettings: "Only Admin and Inventory Manager can modify notification parameters.",
+    cancel: "Cancel"
   },
   ta: {
     // Navigation
@@ -301,7 +302,8 @@ export const LOCALES = {
     enableAlertTypes: "இயக்கப்பட்ட எச்சரிக்கை வகைகள்",
     saveSettings: "அமைப்புகளைச் சேமிக்கவும்",
     settingsUpdatedAudit: "அறிவிப்பு அமைப்புகள் புதுப்பிக்கப்பட்டன",
-    permissionDeniedSettings: "நிர்வாகி மற்றும் சரக்கு மேலாளர் மட்டுமே அறிவிப்பு அமைப்புகளை மாற்ற முடியும்."
+    permissionDeniedSettings: "நிர்வாகி மற்றும் சரக்கு மேலாளர் மட்டுமே அறிவிப்பு அமைப்புகளை மாற்ற முடியும்.",
+    cancel: "ரத்து செய்"
   }
 };
 
