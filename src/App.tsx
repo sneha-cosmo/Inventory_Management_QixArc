@@ -133,6 +133,22 @@ import {
   AppNotification
 } from './utils/notificationCenter';
 
+import { Clock as AppClock } from './rules/clock';
+import { 
+  calculateReorderLevel, 
+  calculateStockDays, 
+  getStockHealth, 
+  validateSaleQuantity, 
+  processTransferDispatch, 
+  processTransferReceipt 
+} from './rules/stock';
+import { classifyExpiry } from './rules/expiry';
+import { calculateCostVariance, formatCurrency } from './rules/valuation';
+import { calculateGst } from './rules/tax';
+import { computeInvoiceStatus, validateInvoiceNumber } from './rules/invoice';
+import { hasPermission } from './rules/permissions';
+import { createAuditEvent } from './rules/audit';
+
 const INITIAL_BATCHES: Batch[] = [
   {
     id: 'BAT-001',
@@ -514,7 +530,7 @@ export default function App() {
   const reorderPredictions = useMemo((): ReorderPrediction[] => {
     return inventory.map(item => {
       const multiplier = adaptiveSettings[item.id] || 1.0;
-      const reorderLevel = (item.dailyConsumption * item.leadTime) + (item.safetyStock * multiplier);
+      const reorderLevel = calculateReorderLevel(item.dailyConsumption, item.leadTime, item.safetyStock * multiplier);
       const reorderQuantity = Math.max(0, reorderLevel - item.currentStock);
       return {
         itemId: item.id,
@@ -522,7 +538,7 @@ export default function App() {
         currentStock: item.currentStock,
         reorderLevel: parseFloat(reorderLevel.toFixed(1)),
         reorderQuantity: parseFloat(reorderQuantity.toFixed(1)),
-        needsReorder: item.currentStock < reorderLevel
+        needsReorder: item.currentStock <= reorderLevel
       };
     });
   }, [inventory, adaptiveSettings]);
@@ -542,14 +558,14 @@ export default function App() {
 
     return Array.from(analysisMap.entries()).map(([itemId, data]) => {
       const itemName = inventory.find(i => i.id === itemId)?.name || 'Unknown';
-      const variance = data.actual - data.planned;
+      const varianceResult = calculateCostVariance(1, data.planned, 1, data.actual);
       return {
         itemId,
         itemName,
         plannedAmount: data.planned,
         actualAmount: data.actual,
-        variance,
-        status: variance > 0 ? 'loss' : variance < 0 ? 'profit' : 'neutral'
+        variance: varianceResult.variance,
+        status: varianceResult.status === 'unfavourable' ? 'loss' : varianceResult.status === 'favourable' ? 'profit' : 'neutral'
       };
     });
   }, [orders, inventory]);
@@ -577,17 +593,15 @@ export default function App() {
 
   // Handlers
   const addAuditLog = (action: string, entityType: string, entityId: string, details: string) => {
-    const newLog: AuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
+    const newLog = createAuditEvent({
       action,
       entityType,
       entityId,
       details,
-      operatorId: currentUser?.id,
       operatorName: currentUser?.name,
-      operatorRole: currentUser?.role
-    };
+      operatorRole: currentUser?.role,
+      operatorId: currentUser?.id
+    });
     setAuditLogs([newLog, ...auditLogs]);
   };
 
@@ -1204,7 +1218,7 @@ export default function App() {
                   />
                   <StatCard 
                     title={language === 'ta' ? "நிகர லாபம் / இழப்பு" : "Net Profit / Loss"} 
-                    value={`₹${Math.abs(totalStats.netProfit).toLocaleString()}`}
+                    value={formatCurrency(totalStats.netProfit)}
                     subtitle={totalStats.netProfit >= 0 ? (language === 'ta' ? "நிகர ஆதாயம்" : "Net Gain") : (language === 'ta' ? "நிகர இழப்பு" : "Net Loss")}
                     trend={totalStats.netProfit >= 0 ? 'up' : 'down'}
                     icon={<ShieldCheck className={totalStats.netProfit >= 0 ? "text-green-600" : "text-red-600"} />}
@@ -1219,20 +1233,28 @@ export default function App() {
                       <CardDescription>Comparison of planned vs actual costs</CardDescription>
                     </CardHeader>
                     <CardContent className="h-[350px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={varianceAnalysis}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                          <XAxis dataKey="itemName" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-                          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
-                          <Tooltip 
-                            cursor={{ fill: '#F3F4F6' }}
-                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                          />
-                          <Legend />
-                          <Bar name="Planned" dataKey="plannedAmount" fill="#6366F1" radius={[4, 4, 0, 0]} />
-                          <Bar name="Actual" dataKey="actualAmount" fill="#F43F5E" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
+                      {varianceAnalysis.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                          <BarChart3 className="w-10 h-10 mb-2 opacity-40" />
+                          <p className="text-sm font-medium">No completed production orders available to analyze cost variance.</p>
+                          <p className="text-xs text-slate-400 mt-1">Complete planned work orders to view planned vs actual cost performance.</p>
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={varianceAnalysis}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                            <XAxis dataKey="itemName" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+                            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+                            <Tooltip 
+                              cursor={{ fill: '#F3F4F6' }}
+                              contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                            />
+                            <Legend />
+                            <Bar name="Planned" dataKey="plannedAmount" fill="#6366F1" radius={[4, 4, 0, 0]} />
+                            <Bar name="Actual" dataKey="actualAmount" fill="#F43F5E" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -1349,6 +1371,15 @@ export default function App() {
                     alert("🔒 Security blockade: Your current active profile does not have permission to record manual stock adjustments. Please switch to Amit Sharma or Sneha R. in the header switcher to authorize this correction.");
                     return;
                   }
+                  if (!a.reason || !a.reason.trim()) {
+                    alert("Mandatory reason required for inventory adjustment.");
+                    return;
+                  }
+                  const item = inventory.find(i => i.id === a.itemId);
+                  if (item && a.quantity < 0 && (item.currentStock + a.quantity < 0)) {
+                    alert(`Adjustment rejected: Stock cannot go negative. Current stock is ${item.currentStock}, cannot reduce by ${Math.abs(a.quantity)}.`);
+                    return;
+                  }
                   setAdjustments([a, ...adjustments]);
                   // Update inventory stock level
                   setInventory(inventory.map(item => 
@@ -1369,7 +1400,7 @@ export default function App() {
                     }
                     return next;
                   });
-                  addAuditLog('Inventory Adjustment', 'InventoryAdjustment', a.id, `${a.type.toUpperCase()} of ${a.quantity} for item ${inventory.find(i => i.id === a.itemId)?.name}`);
+                  addAuditLog('Inventory Adjustment', 'InventoryAdjustment', a.id, `${a.type.toUpperCase()} of ${a.quantity} for item ${inventory.find(i => i.id === a.itemId)?.name}. Reason: ${a.reason}`);
                 }}
                 language={language}
               />
@@ -1410,6 +1441,7 @@ export default function App() {
                 purchaseOrders={purchaseOrders}
                 suppliers={suppliers}
                 inventory={inventory}
+                warehouses={warehouses}
                 onAddPO={(po) => {
                   setPurchaseOrders([po, ...purchaseOrders]);
                   addAuditLog('Create Purchase Order', 'PurchaseOrder', po.id, `PO created for supplier ${suppliers.find(s => s.id === po.supplierId)?.name}`);
@@ -1417,6 +1449,77 @@ export default function App() {
                 onAddSupplier={(s) => {
                   setSuppliers([...suppliers, s]);
                   addAuditLog('Add Supplier', 'Supplier', s.id, `Supplier ${s.name} added to database`);
+                }}
+                onReceivePO={(poId, receivedQty, warehouseId, batchNumber, expiryDate) => {
+                  const targetPO = purchaseOrders.find(p => p.id === poId);
+                  if (!targetPO) return;
+                  const item = targetPO.items[0];
+                  if (!item) return;
+                  const itemObj = inventory.find(i => i.id === item.itemId);
+                  const orderedQty = item.quantity;
+                  const prevReceived = item.receivedQuantity || 0;
+                  const remaining = Math.max(0, orderedQty - prevReceived);
+                  const effectiveReceived = Math.min(receivedQty, remaining);
+                  const newTotalReceived = prevReceived + effectiveReceived;
+                  const isFullyReceived = newTotalReceived >= orderedQty;
+                  const newStatus = isFullyReceived ? 'received' : 'partially_received';
+
+                  // 1. Update PO status and receivedQuantity
+                  setPurchaseOrders(prevPOs => prevPOs.map(p => {
+                    if (p.id !== poId) return p;
+                    return {
+                      ...p,
+                      status: newStatus,
+                      destinationWarehouseId: warehouseId,
+                      items: p.items.map((pi, idx) => idx === 0 ? { ...pi, receivedQuantity: newTotalReceived } : pi)
+                    };
+                  }));
+
+                  // 2. Add stock to receiving warehouse in stockLevels
+                  setStockLevels(prevLevels => {
+                    let matched = false;
+                    const next = prevLevels.map(sl => {
+                      if (sl.itemId === item.itemId && sl.warehouseId === warehouseId) {
+                        matched = true;
+                        return { ...sl, quantity: sl.quantity + effectiveReceived };
+                      }
+                      return sl;
+                    });
+                    if (!matched) {
+                      next.push({ itemId: item.itemId, warehouseId, quantity: effectiveReceived });
+                    }
+                    return next;
+                  });
+
+                  // 3. Add stock to inventory item master
+                  setInventory(prevInv => prevInv.map(invItem => 
+                    invItem.id === item.itemId ? { ...invItem, currentStock: invItem.currentStock + effectiveReceived } : invItem
+                  ));
+
+                  // 4. Update / create batch
+                  const lotNum = batchNumber || `LOT-${targetPO.id.replace('PO-', '')}-${Date.now().toString().slice(-4)}`;
+                  const expDate = expiryDate || AppClock.getCurrentDateString();
+                  setBatches(prevBatches => [
+                    {
+                      id: `BAT-${Date.now()}`,
+                      itemId: item.itemId,
+                      batchNumber: lotNum,
+                      manufactureDate: AppClock.getCurrentDateString(),
+                      expiryDate: expDate,
+                      quantity: effectiveReceived,
+                      warehouseId
+                    },
+                    ...prevBatches
+                  ]);
+
+                  // 5. 6-Field Audit event
+                  const whName = warehouses.find(w => w.id === warehouseId)?.name || warehouseId;
+                  addAuditLog(
+                    'Goods Receipt',
+                    'PurchaseOrder',
+                    poId,
+                    `Goods received for PO ${poId}: ${effectiveReceived} ${itemObj?.unit || 'units'} of ${itemObj?.name || 'item'} delivered to ${whName} under Batch Lot #${lotNum}. Status updated to ${newStatus}.`
+                  );
                 }}
                 language={language}
                 preloadedPOItem={preloadedPOItem}
@@ -1433,6 +1536,17 @@ export default function App() {
                 onGenerateIRN={handleGenerateIRN}
                 language={language}
                 onAddSO={(so) => {
+                  // Pre-validate all items to ensure stock is never oversold / negative
+                  for (const item of so.items) {
+                    const invItem = inventory.find(i => i.id === item.itemId);
+                    const available = invItem?.currentStock || 0;
+                    const validation = validateSaleQuantity(available, item.quantity);
+                    if (!validation.valid) {
+                      alert(`Cannot complete sale: ${validation.error} for ${invItem?.name || 'Item'}. Stock is never negative.`);
+                      return;
+                    }
+                  }
+
                   // Calculate GST tax parameters
                   const customer = customers.find(c => c.id === so.customerId);
                   const isIntraState = !customer || !customer.state || customer.state.toLowerCase() === 'maharashtra';
@@ -2332,7 +2446,7 @@ function BatchPage({
   const [formData, setFormData] = useState({ 
     itemId: inventory[0]?.id || '', 
     batchNumber: '', 
-    manufactureDate: '2026-05-26', 
+    manufactureDate: AppClock.getCurrentDateString(), 
     expiryDate: '', 
     quantity: '', 
     warehouseId: warehouses[0]?.id || '' 
@@ -2347,7 +2461,7 @@ function BatchPage({
   const handleAutoGenerateBatchNumber = () => {
     const selectedItem = inventory.find(i => i.id === formData.itemId);
     const prefix = selectedItem ? selectedItem.sku.split('-')[0].substring(0, 3).toUpperCase() : 'LOT';
-    const cleanDate = new Date().toISOString().split('T')[0].replace(/-/g, '').substring(2, 8);
+    const cleanDate = AppClock.getCurrentDate().toISOString().split('T')[0].replace(/-/g, '').substring(2, 8);
     const randomSuffix = Math.floor(100 + Math.random() * 900);
     setFormData(prev => ({
       ...prev,
@@ -2364,13 +2478,13 @@ function BatchPage({
     if (!formData.itemId) return;
     
     // Auto-fill manufactureDate if empty
-    const mDate = formData.manufactureDate || '2026-05-26';
+    const mDate = formData.manufactureDate || AppClock.getCurrentDateString();
     onAddBatch({ 
       id: `BAT-${Date.now()}`, 
       itemId: formData.itemId,
       batchNumber: formData.batchNumber || `BAT-LOT-${Math.floor(Math.random() * 10000)}`,
       manufactureDate: mDate,
-      expiryDate: formData.expiryDate || '2026-11-26',
+      expiryDate: formData.expiryDate || '2027-05-26',
       quantity: Number(formData.quantity) || 0,
       warehouseId: formData.warehouseId
     });
@@ -2379,47 +2493,23 @@ function BatchPage({
     setFormData({ 
       itemId: inventory[0]?.id || '', 
       batchNumber: '', 
-      manufactureDate: '2026-05-26', 
+      manufactureDate: AppClock.getCurrentDateString(), 
       expiryDate: '', 
       quantity: '', 
       warehouseId: warehouses[0]?.id || '' 
     });
   };
 
-  // Base reference date matching context: 2026-05-26
-  const REFERENCE_DATE = new Date('2026-05-26');
-
-  // Compute stats and enrich batches with helper warning metrics
+  // Compute stats and enrich batches with pure rules and injectable Clock
   const enrichedBatches = useMemo(() => {
     return batches.map(batch => {
-      const manufacturingTime = new Date(batch.manufactureDate).getTime();
-      const expiryTime = new Date(batch.expiryDate).getTime();
-      
-      const diffTime = expiryTime - REFERENCE_DATE.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      let statusLabel: 'Expired' | 'Urgent' | 'Low' | 'Attention' | 'Optimal' = 'Optimal';
-      let badgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-200';
-      
-      if (diffDays <= 0) {
-        statusLabel = 'Expired';
-        badgeClass = 'bg-red-100 text-red-700 border border-red-300 font-bold animate-pulse';
-      } else if (diffDays <= 7) {
-        statusLabel = 'Urgent';
-        badgeClass = 'bg-red-50 text-red-600 border border-red-200 animate-pulse';
-      } else if (diffDays <= 15) {
-        statusLabel = 'Low';
-        badgeClass = 'bg-orange-50 text-orange-600 border border-orange-200';
-      } else if (diffDays <= 30) {
-        statusLabel = 'Attention';
-        badgeClass = 'bg-amber-50 text-amber-600 border border-amber-200';
-      }
-      
+      const classification = classifyExpiry(batch.expiryDate, AppClock.getCurrentDate());
       return {
         ...batch,
-        diffDays,
-        statusLabel,
-        badgeClass
+        diffDays: classification.diffDays,
+        statusLabel: classification.status,
+        badgeClass: classification.badgeClass,
+        label: classification.label
       };
     });
   }, [batches]);
@@ -2463,10 +2553,9 @@ function BatchPage({
       
       let matchesStatus = true;
       if (statusFilter === 'expired') matchesStatus = b.diffDays <= 0 && !b.recalled;
-      else if (statusFilter === 'urgent') matchesStatus = b.diffDays > 0 && b.diffDays <= 7 && !b.recalled;
-      else if (statusFilter === 'low') matchesStatus = b.diffDays > 7 && b.diffDays <= 15 && !b.recalled;
-      else if (statusFilter === 'attention') matchesStatus = b.diffDays > 15 && b.diffDays <= 30 && !b.recalled;
-      else if (statusFilter === 'optimal') matchesStatus = b.diffDays > 30 && !b.recalled;
+      else if (statusFilter === 'critical' || statusFilter === 'urgent') matchesStatus = b.diffDays > 0 && b.diffDays <= 7 && !b.recalled;
+      else if (statusFilter === 'near_expiry' || statusFilter === 'low' || statusFilter === 'attention') matchesStatus = b.diffDays > 7 && b.diffDays <= 30 && !b.recalled;
+      else if (statusFilter === 'healthy' || statusFilter === 'optimal') matchesStatus = b.diffDays > 30 && !b.recalled;
       else if (statusFilter === 'recalled') matchesStatus = !!b.recalled;
 
       return matchesSearch && matchesItem && matchesStatus;
@@ -2818,11 +2907,10 @@ function BatchPage({
         <div className="flex gap-1.5 overflow-x-auto pb-1.5 border-b border-gray-100">
           {[
             { id: 'all', label: 'All Lots', count: enrichedBatches.length },
-            { id: 'expired', label: 'Expired', count: enrichedBatches.filter(b => b.diffDays <= 0 && !b.recalled).length, color: 'text-red-700 bg-red-50' },
-            { id: 'urgent', label: 'Urgent (≤7d)', count: enrichedBatches.filter(b => b.diffDays > 0 && b.diffDays <= 7 && !b.recalled).length, color: 'text-rose-600 bg-rose-50' },
-            { id: 'low', label: 'Low Expiry (≤15d)', count: enrichedBatches.filter(b => b.diffDays > 7 && b.diffDays <= 15 && !b.recalled).length, color: 'text-orange-600 bg-orange-50' },
-            { id: 'attention', label: 'Caution (≤30d)', count: enrichedBatches.filter(b => b.diffDays > 15 && b.diffDays <= 30 && !b.recalled).length, color: 'text-amber-600 bg-amber-50' },
-            { id: 'optimal', label: 'Optimal (>30d)', count: enrichedBatches.filter(b => b.diffDays > 30 && !b.recalled).length, color: 'text-emerald-600 bg-emerald-50' },
+            { id: 'expired', label: 'Expired (≤0d)', count: enrichedBatches.filter(b => b.diffDays <= 0 && !b.recalled).length, color: 'text-red-700 bg-red-50' },
+            { id: 'critical', label: 'Critical (1-7d)', count: enrichedBatches.filter(b => b.diffDays > 0 && b.diffDays <= 7 && !b.recalled).length, color: 'text-rose-600 bg-rose-50' },
+            { id: 'near_expiry', label: 'Near Expiry (8-30d)', count: enrichedBatches.filter(b => b.diffDays > 7 && b.diffDays <= 30 && !b.recalled).length, color: 'text-amber-600 bg-amber-50' },
+            { id: 'healthy', label: 'Healthy (>30d)', count: enrichedBatches.filter(b => b.diffDays > 30 && !b.recalled).length, color: 'text-emerald-600 bg-emerald-50' },
             { id: 'recalled', label: 'Quarantined', count: enrichedBatches.filter(b => b.recalled).length, color: 'text-slate-700 bg-slate-100' }
           ].map(tab => (
             <button
@@ -2924,11 +3012,7 @@ function BatchPage({
                             </span>
                           ) : (
                             <Badge className={`capitalize py-0.5 ${batch.badgeClass}`}>
-                              {batch.statusLabel === 'Expired' && `🚨 Expired (${Math.abs(batch.diffDays)}d ago)`}
-                              {batch.statusLabel === 'Urgent' && `⚠️ Urgent! (${batch.diffDays}d left)`}
-                              {batch.statusLabel === 'Low' && `⚠️ Low (${batch.diffDays}d left)`}
-                              {batch.statusLabel === 'Attention' && `💡 Attention (${batch.diffDays}d left)`}
-                              {batch.statusLabel === 'Optimal' && `✅ Optimal (${batch.diffDays}d left)`}
+                              {batch.label || batch.statusLabel}
                             </Badge>
                           )}
                         </TableCell>
@@ -2947,7 +3031,7 @@ function BatchPage({
                                   alert("🔒 Security blockade: Your current active profile does not have permission to trigger emergency product recalls. Please switch to Amit Sharma or Sneha R. in the header switcher to authorize this quarantine.");
                                   return;
                                 }
-                                if (window.confirm(`Warning: Are you absolutely sure you want to recall and quarantine all ${batch.quantity} units of Batch Lot #${batch.batchNumber}? This stock will be safely isolated immediately.`)) {
+                                if (window.confirm(`[Simulation Mode] Are you sure you want to trigger emergency recall workflow for Lot #${batch.batchNumber}? ${batch.quantity} ${unitLabel} will be safely isolated.`)) {
                                   onRecallBatch(batch.id);
                                 }
                               }}
@@ -2975,8 +3059,10 @@ function PurchasePage({
   purchaseOrders, 
   suppliers, 
   inventory, 
+  warehouses,
   onAddPO, 
   onAddSupplier, 
+  onReceivePO,
   language = 'en',
   preloadedPOItem,
   onClearPreloadedPO
@@ -2984,14 +3070,23 @@ function PurchasePage({
   purchaseOrders: PurchaseOrder[],
   suppliers: Supplier[],
   inventory: InventoryItem[],
+  warehouses: Warehouse[],
   onAddPO: (po: PurchaseOrder) => void,
   onAddSupplier: (s: Supplier) => void,
+  onReceivePO?: (poId: string, receivedQty: number, destinationWarehouseId: string, batchNumber?: string, expiryDate?: string) => void,
   language?: Language,
   preloadedPOItem?: { itemId: string; quantity: number } | null,
   onClearPreloadedPO?: () => void
 }) {
   const [openPO, setOpenPO] = useState(false);
   const [openSup, setOpenSup] = useState(false);
+  const [receivingPO, setReceivingPO] = useState<PurchaseOrder | null>(null);
+  const [receiveData, setReceiveData] = useState({
+    quantity: '',
+    warehouseId: warehouses[0]?.id || '',
+    batchNumber: '',
+    expiryDate: ''
+  });
   const [poData, setPoData] = useState({ supplierId: '', itemId: '', quantity: '', rate: '' });
   const [supData, setSupData] = useState({ name: '', contact: '', email: '', category: '' });
 
@@ -3018,13 +3113,45 @@ function PurchasePage({
     onAddPO({
       id: `PO-${Date.now()}`,
       supplierId: poData.supplierId,
-      date: new Date().toISOString().split('T')[0],
+      date: AppClock.getCurrentDateString(),
       status: 'pending',
-      items: [{ itemId: poData.itemId, quantity: Number(poData.quantity), rate: Number(poData.rate) }],
+      items: [{ itemId: poData.itemId, quantity: Number(poData.quantity), rate: Number(poData.rate), receivedQuantity: 0 }],
       totalAmount: total
     });
     setOpenPO(false);
     setPoData({ supplierId: '', itemId: '', quantity: '', rate: '' });
+  };
+
+  const openReceiveModal = (po: PurchaseOrder) => {
+    const item = po.items[0];
+    const itemObj = inventory.find(i => i.id === item?.itemId);
+    const ordered = item?.quantity || 0;
+    const alreadyReceived = item?.receivedQuantity || 0;
+    const remaining = Math.max(0, ordered - alreadyReceived);
+    
+    const nextYear = new Date(AppClock.getCurrentDate());
+    nextYear.setFullYear(nextYear.getFullYear() + 1);
+    const defaultExpiry = nextYear.toISOString().split('T')[0];
+    
+    setReceivingPO(po);
+    setReceiveData({
+      quantity: String(remaining || 1),
+      warehouseId: po.destinationWarehouseId || warehouses[0]?.id || 'wh-1',
+      batchNumber: `LOT-${po.id.replace('PO-', '')}-${itemObj?.sku?.split('-')[0] || 'GEN'}`,
+      expiryDate: defaultExpiry
+    });
+  };
+
+  const handleReceiveSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!receivingPO || !onReceivePO) return;
+    const qty = Number(receiveData.quantity);
+    if (qty <= 0) {
+      alert("Please enter a valid received quantity greater than 0.");
+      return;
+    }
+    onReceivePO(receivingPO.id, qty, receiveData.warehouseId, receiveData.batchNumber, receiveData.expiryDate);
+    setReceivingPO(null);
   };
 
   return (
@@ -3045,22 +3172,135 @@ function PurchasePage({
                 <TableHead>{tText("Date", language)}</TableHead>
                 <TableHead>{tText("Total", language)}</TableHead>
                 <TableHead>{tText("Status", language)}</TableHead>
+                <TableHead className="text-right">{language === 'ta' ? "நடவடிக்கை" : "Action"}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {purchaseOrders.map(po => (
-                <TableRow key={po.id}>
-                  <TableCell className="font-bold">{po.id}</TableCell>
-                  <TableCell>{suppliers.find(s => s.id === po.supplierId)?.name || 'Unknown'}</TableCell>
-                  <TableCell>{po.date}</TableCell>
-                  <TableCell>₹{po.totalAmount.toLocaleString()}</TableCell>
-                  <TableCell><Badge className="bg-amber-100 text-amber-700 capitalize">{po.status}</Badge></TableCell>
-                </TableRow>
-              ))}
+              {purchaseOrders.map(po => {
+                const poItem = po.items[0];
+                const itemObj = inventory.find(i => i.id === poItem?.itemId);
+                const isComplete = po.status === 'received';
+                const isPartial = po.status === 'partially_received';
+                return (
+                  <TableRow key={po.id}>
+                    <TableCell className="font-bold">{po.id}</TableCell>
+                    <TableCell>{suppliers.find(s => s.id === po.supplierId)?.name || 'Unknown'}</TableCell>
+                    <TableCell>{po.date}</TableCell>
+                    <TableCell>₹{po.totalAmount.toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Badge className={
+                        isComplete ? "bg-emerald-100 text-emerald-800" :
+                        isPartial ? "bg-blue-100 text-blue-800" :
+                        "bg-amber-100 text-amber-700 capitalize"
+                      }>
+                        {po.status === 'partially_received' ? 'Partially Received' : po.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {isComplete ? (
+                        <span className="text-xs font-semibold text-emerald-600 flex items-center justify-end gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> {language === 'ta' ? "பெறப்பட்டது" : "Fulfilled"}
+                        </span>
+                      ) : (
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => openReceiveModal(po)}
+                          className="h-7 text-xs font-bold text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                        >
+                          <Truck className="w-3.5 h-3.5 mr-1" /> {language === 'ta' ? "பொருட்களைப் பெறு" : "Receive Goods"}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
+
+      {/* Receive Goods Dialog */}
+      <Dialog open={!!receivingPO} onOpenChange={(open) => { if (!open) setReceivingPO(null); }}>
+        <DialogContent>
+          <form onSubmit={handleReceiveSubmit}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Truck className="text-indigo-600 w-5 h-5" /> Receive Goods - {receivingPO?.id}
+              </DialogTitle>
+              <DialogDescription>
+                Record physical receipt of ordered stock, credit warehouse stock, and create an active batch.
+              </DialogDescription>
+            </DialogHeader>
+            {receivingPO && (() => {
+              const poItem = receivingPO.items[0];
+              const itemObj = inventory.find(i => i.id === poItem?.itemId);
+              const remaining = Math.max(0, (poItem?.quantity || 0) - (poItem?.receivedQuantity || 0));
+              return (
+                <div className="space-y-4 py-4">
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-xs">
+                    <div className="flex justify-between"><span className="text-slate-500">Item:</span><span className="font-bold">{itemObj?.name || 'Item'} ({itemObj?.sku})</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Total Ordered:</span><span className="font-bold">{poItem?.quantity} {itemObj?.unit}</span></div>
+                    <div className="flex justify-between"><span className="text-slate-500">Already Received:</span><span className="font-bold">{poItem?.receivedQuantity || 0} {itemObj?.unit}</span></div>
+                    <div className="flex justify-between border-t border-slate-200 pt-1 text-indigo-700"><span className="font-semibold">Remaining:</span><span className="font-black">{remaining} {itemObj?.unit}</span></div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Quantity to Receive</Label>
+                      <Input 
+                        type="number" 
+                        min="1" 
+                        max={remaining}
+                        value={receiveData.quantity} 
+                        onChange={e => setReceiveData({...receiveData, quantity: e.target.value})} 
+                        required 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Destination Warehouse</Label>
+                      <select 
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={receiveData.warehouseId}
+                        onChange={e => setReceiveData({...receiveData, warehouseId: e.target.value})}
+                        required
+                      >
+                        {warehouses.map(w => (
+                          <option key={w.id} value={w.id}>{w.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Lot / Batch Number</Label>
+                      <Input 
+                        value={receiveData.batchNumber} 
+                        onChange={e => setReceiveData({...receiveData, batchNumber: e.target.value})} 
+                        required 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Expiry Date</Label>
+                      <Input 
+                        type="date" 
+                        value={receiveData.expiryDate} 
+                        onChange={e => setReceiveData({...receiveData, expiryDate: e.target.value})} 
+                        required 
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setReceivingPO(null)}>Cancel</Button>
+              <Button type="submit" className="bg-indigo-600 text-white font-bold">Confirm Receipt</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* PO Dialog */}
       <Dialog open={openPO} onOpenChange={setOpenPO}>
@@ -3137,18 +3377,32 @@ function SalesPage({ salesOrders, inventory, customers, invoices, onGenerateIRN,
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({ customerId: '', itemId: '', quantity: '', rate: '' });
 
+  const selectedItem = inventory.find(i => i.id === formData.itemId);
+  const availableStock = selectedItem ? selectedItem.currentStock : 0;
+  const requestedQty = Number(formData.quantity) || 0;
+  const isOverStock = formData.itemId ? requestedQty > availableStock : false;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.itemId || !formData.customerId) return;
+    
+    // Validate sale quantity strictly using pure domain rules
+    const validation = validateSaleQuantity(availableStock, requestedQty);
+    if (!validation.valid) {
+      alert(`Sale blocked: ${validation.error} (Available: ${availableStock} ${selectedItem?.unit || 'units'}). Stock cannot go negative.`);
+      return;
+    }
+
     const customer = customers.find(c => c.id === formData.customerId);
-    const total = Number(formData.quantity) * Number(formData.rate);
+    const total = requestedQty * Number(formData.rate);
     const soId = `SO-${Date.now()}`;
     onAddSO({
       id: soId,
       customerId: formData.customerId,
       customerName: customer?.name || 'Walk-in Customer',
-      date: new Date().toISOString().split('T')[0],
+      date: AppClock.getCurrentDateString(),
       status: 'pending',
-      items: [{ itemId: formData.itemId, quantity: Number(formData.quantity), rate: Number(formData.rate) }],
+      items: [{ itemId: formData.itemId, quantity: requestedQty, rate: Number(formData.rate) }],
       totalAmount: total
     });
     setOpen(false);
@@ -3237,15 +3491,57 @@ function SalesPage({ salesOrders, inventory, customers, invoices, onGenerateIRN,
                 <Label>Item</Label>
                 <select className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm" value={formData.itemId} onChange={e => setFormData({...formData, itemId: e.target.value})} required>
                   <option value="">-- Select Item --</option>
-                  {inventory.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                  {inventory.map(i => <option key={i.id} value={i.id}>{i.name} (Stock: {i.currentStock} {i.unit})</option>)}
                 </select>
               </div>
+
+              {selectedItem && (
+                <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                  <span className="text-slate-600 font-medium">Available On-Hand Stock:</span>
+                  <Badge className={availableStock > 0 ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}>
+                    {availableStock} {selectedItem.unit}
+                  </Badge>
+                </div>
+              )}
+
+              {isOverStock && (
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-semibold">
+                  ⚠️ Requested quantity ({requestedQty}) exceeds available stock ({availableStock} {selectedItem?.unit}). Overselling is prohibited.
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label>Quantity</Label><Input type="number" value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} required /></div>
-                <div className="space-y-2"><Label>Rate (₹)</Label><Input type="number" value={formData.rate} onChange={e => setFormData({...formData, rate: e.target.value})} required /></div>
+                <div className="space-y-2">
+                  <Label>Quantity</Label>
+                  <Input 
+                    type="number" 
+                    min="1"
+                    max={availableStock > 0 ? availableStock : undefined}
+                    value={formData.quantity} 
+                    onChange={e => setFormData({...formData, quantity: e.target.value})} 
+                    required 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rate (₹)</Label>
+                  <Input 
+                    type="number" 
+                    value={formData.rate} 
+                    onChange={e => setFormData({...formData, rate: e.target.value})} 
+                    required 
+                  />
+                </div>
               </div>
             </div>
-            <DialogFooter><Button type="submit" className="w-full bg-indigo-600 text-white">Create SO & Invoice</Button></DialogFooter>
+            <DialogFooter>
+              <Button 
+                type="submit" 
+                disabled={isOverStock || availableStock <= 0} 
+                className="w-full bg-indigo-600 text-white font-bold disabled:opacity-50"
+              >
+                Create SO & Invoice
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -4415,11 +4711,16 @@ function ScannerDialog({ inventory, onScan, trigger }: {
       />
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Scan className="text-indigo-600" /> Smart Barcode Scanner
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="flex items-center gap-2">
+              <Scan className="text-indigo-600" /> Smart Barcode Scanner
+            </DialogTitle>
+            <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-[10px]">
+              Simulation Mode
+            </Badge>
+          </div>
           <DialogDescription>
-            Scan a barcode or enter the code manually to quickly find an item in your inventory.
+            Scan a barcode or enter the code manually to quickly find an item in your inventory. Camera feed is simulated in-browser.
           </DialogDescription>
         </DialogHeader>
         

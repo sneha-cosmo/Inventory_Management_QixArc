@@ -380,7 +380,10 @@ export default function EasyTaxFilingPanel({
               {language === 'ta' ? "ஜிஎஸ்டி போர்டல் & எளிதான வரி தாக்கல்" : "GST Portal & Easy Tax Filing"}
             </h2>
             <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">
-              <CheckCircle2 className="w-3 h-3 mr-1" /> GSTR-1 Compliant
+              <CheckCircle2 className="w-3 h-3 mr-1" /> GSTR-1 Structure
+            </Badge>
+            <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-xs">
+              Self-Calculation Tool — Not certified for official GST portal filing
             </Badge>
           </div>
           <p className="text-xs text-slate-500">

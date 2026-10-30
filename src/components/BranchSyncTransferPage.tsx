@@ -296,11 +296,16 @@ export default function BranchSyncTransferPage({
   return (
     <div className="space-y-6 text-[#1A1A1A]">
       {/* Informative Status Notification Area */}
-      <div className="bg-[#EEEFFB] border border-indigo-200 p-4 rounded-3xl flex items-start gap-3 shadow-xs">
-        <Globe2 className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
-        <div className="text-xs text-indigo-950 leading-relaxed">
-          <span className="font-bold">MULTI-BRANCH SYNCHRONIZATION HUB:</span> Manage individual stock counts per warehouse dynamically, issue audit checks, and initialize secure inter-branch physical stock transfers. Monitor transit timelines and establish instant central ERP ledger reconciliation.
+      <div className="bg-[#EEEFFB] border border-indigo-200 p-4 rounded-3xl flex items-start justify-between gap-3 shadow-xs">
+        <div className="flex items-start gap-3">
+          <Globe2 className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-indigo-950 leading-relaxed">
+            <span className="font-bold">MULTI-BRANCH SYNCHRONIZATION HUB:</span> Manage individual stock counts per warehouse dynamically, issue audit checks, and initialize secure inter-branch physical stock transfers. Monitor transit timelines and establish instant central ERP ledger reconciliation.
+          </div>
         </div>
+        <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-[11px] whitespace-nowrap font-semibold">
+          Simulation Mode (In-Memory)
+        </Badge>
       </div>
 
       {/* Primary tab switcher */}

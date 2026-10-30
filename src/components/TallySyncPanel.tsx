@@ -420,11 +420,16 @@ export default function TallySyncPanel({
     <div className="space-y-6 text-[#1A1A1A]">
       
       {/* Informative warning header banner */}
-      <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-3xl flex items-start gap-3 shadow-xs">
-        <Database className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
-        <div className="text-xs text-indigo-950 leading-relaxed">
-          <span className="font-extrabold tracking-tight uppercase">Tally ERP 9 / TallyPrime Bridge:</span> Live accounting gateway synchronization. Convert and link invoices, purchases, and receipts into standardized XML ledger vouchers. Generate downloadable double-entry XML importing packets directly, or sync automatically with your local server port.
+      <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-3xl flex items-start justify-between gap-3 shadow-xs">
+        <div className="flex items-start gap-3">
+          <Database className="w-5 h-5 text-indigo-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-indigo-950 leading-relaxed">
+            <span className="font-extrabold tracking-tight uppercase">Tally ERP 9 / TallyPrime Bridge:</span> Live accounting gateway synchronization. Convert and link invoices, purchases, and receipts into standardized XML ledger vouchers. Generate downloadable double-entry XML importing packets directly, or sync automatically with your local server port.
+          </div>
         </div>
+        <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-300 text-[11px] whitespace-nowrap font-semibold">
+          Export Only — Not certified for official statutory filing
+        </Badge>
       </div>
 
       {/* Ribbon Control bar with custom submenu tabs */}

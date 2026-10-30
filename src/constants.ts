@@ -13,6 +13,7 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     leadTime: 5,
     safetyStock: 100,
     unit: 'kg',
+    uqc: 'KGS',
     hsnCode: '5208',
     gstRate: 5
   },
@@ -28,6 +29,7 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     leadTime: 3,
     safetyStock: 40,
     unit: 'cones',
+    uqc: 'CON',
     hsnCode: '5401',
     gstRate: 12
   },
@@ -43,6 +45,7 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     leadTime: 7,
     safetyStock: 300,
     unit: 'pcs',
+    uqc: 'PCS',
     hsnCode: '9606',
     gstRate: 18
   },
@@ -58,6 +61,7 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     leadTime: 10,
     safetyStock: 10,
     unit: 'meters',
+    uqc: 'MTR',
     hsnCode: '5808',
     gstRate: 12
   },
@@ -73,6 +77,7 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     leadTime: 12,
     safetyStock: 20,
     unit: 'meters',
+    uqc: 'MTR',
     hsnCode: '5209',
     gstRate: 5
   },
@@ -88,14 +93,35 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     leadTime: 15,
     safetyStock: 100,
     unit: 'pcs',
+    uqc: 'PCS',
     hsnCode: '7318',
     gstRate: 18
   }
 ];
 
 export const INITIAL_WAREHOUSES: Warehouse[] = [
-  { id: 'wh-1', name: 'Main Warehouse', location: 'Mumbai' },
-  { id: 'wh-2', name: 'Secondary Depot', location: 'Pune' }
+  { 
+    id: 'wh-1', 
+    name: 'Main Warehouse', 
+    location: 'Mumbai',
+    legalName: 'InvPredict Manufacturing Central Hub',
+    gstin: '27AAAAA0000A1Z5',
+    addressLines: ['Plot 12, Industrial Area, Andheri East'],
+    stateCode: '27',
+    state: 'Maharashtra',
+    pin: '400001'
+  },
+  { 
+    id: 'wh-2', 
+    name: 'Secondary Depot', 
+    location: 'Pune',
+    legalName: 'InvPredict Regional Logistics Depot',
+    gstin: '27AAAAA0000A1Z5',
+    addressLines: ['Sector 4, MIDC, Viman Nagar'],
+    stateCode: '27',
+    state: 'Maharashtra',
+    pin: '411014'
+  }
 ];
 
 export const INITIAL_CATEGORIES: Category[] = [
@@ -105,9 +131,45 @@ export const INITIAL_CATEGORIES: Category[] = [
 ];
 
 export const INITIAL_CUSTOMERS: Customer[] = [
-  { id: 'cust-1', name: 'Elite Apparels', email: 'billing@elite.com', contact: '+91 98765 43210', address: 'Bandra, Mumbai, MH', state: 'Maharashtra', gstin: '27AAAAA1111A1Z1' },
-  { id: 'cust-2', name: 'Global Textiles', email: 'finance@global.com', contact: '+91 91234 56789', address: 'Viman Nagar, Pune, MH', state: 'Maharashtra', gstin: '27BBBBB2222B2Z2' },
-  { id: 'cust-3', name: 'Karnat Apparel Hub', email: 'contact@karnathub.com', contact: '+91 93333 44444', address: 'Indiranagar, Bengaluru, KA', state: 'Karnataka', gstin: '29CCCCC3333C3Z3' }
+  { 
+    id: 'cust-1', 
+    name: 'Elite Apparels', 
+    legalName: 'Elite Apparels Private Limited',
+    email: 'billing@elite.com', 
+    contact: '+91 98765 43210', 
+    address: 'Bandra, Mumbai, MH', 
+    addressLines: ['402 Business Point, Turner Road, Bandra West'],
+    state: 'Maharashtra', 
+    stateCode: '27',
+    pin: '400050',
+    gstin: '27AAAAA1111A1Z1' 
+  },
+  { 
+    id: 'cust-2', 
+    name: 'Global Textiles', 
+    legalName: 'Global Textiles LLP',
+    email: 'finance@global.com', 
+    contact: '+91 91234 56789', 
+    address: 'Viman Nagar, Pune, MH', 
+    addressLines: ['Suite 10, Commerce Towers, Viman Nagar'],
+    state: 'Maharashtra', 
+    stateCode: '27',
+    pin: '411014',
+    gstin: '27BBBBB2222B2Z2' 
+  },
+  { 
+    id: 'cust-3', 
+    name: 'Karnat Apparel Hub', 
+    legalName: 'Karnat Apparel Hub Enterprises',
+    email: 'contact@karnathub.com', 
+    contact: '+91 93333 44444', 
+    address: 'Indiranagar, Bengaluru, KA', 
+    addressLines: ['12 100ft Road, HAL 2nd Stage, Indiranagar'],
+    state: 'Karnataka', 
+    stateCode: '29',
+    pin: '560038',
+    gstin: '29CCCCC3333C3Z3' 
+  }
 ];
 
 export const INITIAL_INVOICES: Invoice[] = [
@@ -184,12 +246,81 @@ export const INITIAL_SALES_ORDERS: SalesOrder[] = [
   }
 ];
 
-export const INITIAL_ORDERS: ProductionOrder[] = [];
+export const INITIAL_ORDERS: ProductionOrder[] = [
+  {
+    id: 'ORD-2026-001',
+    date: '2026-05-15',
+    status: 'completed',
+    items: [
+      {
+        id: 'pi-1',
+        itemId: '1',
+        itemName: 'Fabric (Cotton)',
+        plannedQty: 100,
+        plannedRate: 40,
+        actualQty: 110,
+        actualRate: 40
+      }
+    ]
+  },
+  {
+    id: 'ORD-2026-002',
+    date: '2026-05-20',
+    status: 'completed',
+    items: [
+      {
+        id: 'pi-2',
+        itemId: '2',
+        itemName: 'Thread (Polyester)',
+        plannedQty: 50,
+        plannedRate: 35,
+        actualQty: 48,
+        actualRate: 35
+      }
+    ]
+  }
+];
 
 export const INITIAL_SUPPLIERS: Supplier[] = [
-  { id: 'sup-1', name: 'Cotton Fields India', contact: '+91 94444 55555', email: 'sales@cottonfields.in', category: 'Fabrics' },
-  { id: 'sup-2', name: 'Ace Thread Distributors', contact: '+91 95555 66666', email: 'orders@acethreads.com', category: 'Threads' },
-  { id: 'sup-3', name: 'Standard Button Co.', contact: '+91 96666 77777', email: 'info@standardbuttons.com', category: 'Accessories' }
+  { 
+    id: 'sup-1', 
+    name: 'Cotton Fields India', 
+    legalName: 'Cotton Fields India Pvt Ltd',
+    contact: '+91 94444 55555', 
+    email: 'sales@cottonfields.in', 
+    category: 'Fabrics',
+    gstin: '27AAAAA9999A1Z9',
+    stateCode: '27',
+    state: 'Maharashtra',
+    pin: '400018',
+    addressLines: ['Textile Park, Lower Parel, Mumbai']
+  },
+  { 
+    id: 'sup-2', 
+    name: 'Ace Thread Distributors', 
+    legalName: 'Ace Thread Distributors Co.',
+    contact: '+91 95555 66666', 
+    email: 'orders@acethreads.com', 
+    category: 'Threads',
+    gstin: '27BBBBB8888B1Z8',
+    stateCode: '27',
+    state: 'Maharashtra',
+    pin: '411001',
+    addressLines: ['Camp Industrial Estate, Pune']
+  },
+  { 
+    id: 'sup-3', 
+    name: 'Standard Button Co.', 
+    legalName: 'Standard Button & Fastener Ltd',
+    contact: '+91 96666 77777', 
+    email: 'info@standardbuttons.com', 
+    category: 'Accessories',
+    gstin: '29CCCCC7777C1Z7',
+    stateCode: '29',
+    state: 'Karnataka',
+    pin: '560002',
+    addressLines: ['Peenya Industrial Area, Bengaluru']
+  }
 ];
 
 export const INITIAL_PURCHASE_ORDERS: PurchaseOrder[] = [

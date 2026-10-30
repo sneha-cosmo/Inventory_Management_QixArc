@@ -2,6 +2,12 @@ export interface Warehouse {
   id: string;
   name: string;
   location: string;
+  legalName?: string;
+  gstin?: string;
+  addressLines?: string[];
+  stateCode?: string; // E.g. '27' for Maharashtra
+  state?: string;
+  pin?: string;
 }
 
 export interface Supplier {
@@ -10,6 +16,12 @@ export interface Supplier {
   contact: string;
   email: string;
   category: string;
+  legalName?: string;
+  gstin?: string;
+  addressLines?: string[];
+  stateCode?: string;
+  state?: string;
+  pin?: string;
 }
 
 export interface Category {
@@ -35,6 +47,7 @@ export interface InventoryItem {
   barcode?: string;
   categoryId: string;
   unit: string;
+  uqc?: string; // Unit Quantity Code (e.g., KGS, MTR, PCS, NOS)
   currentStock: number; // Total across all warehouses
   minStock: number;
   dailyConsumption: number;
@@ -57,17 +70,22 @@ export interface StockLevel {
   quantity: number;
 }
 
+export interface PurchaseOrderItem {
+  itemId: string;
+  quantity: number;
+  rate: number;
+  receivedQuantity?: number;
+}
+
 export interface PurchaseOrder {
   id: string;
   supplierId: string;
   date: string;
-  status: 'pending' | 'received' | 'cancelled';
-  items: {
-    itemId: string;
-    quantity: number;
-    rate: number;
-  }[];
+  status: 'draft' | 'pending' | 'partially_received' | 'received' | 'cancelled';
+  items: PurchaseOrderItem[];
   totalAmount: number;
+  destinationWarehouseId?: string;
+  receivedDate?: string;
 }
 
 export interface Customer {
@@ -76,8 +94,12 @@ export interface Customer {
   contact: string;
   email: string;
   address?: string;
+  legalName?: string;
+  addressLines?: string[];
   gstin?: string;
+  stateCode?: string;
   state?: string;
+  pin?: string;
 }
 
 export interface Invoice {
@@ -145,6 +167,11 @@ export interface StockTransfer {
   trackingNumber: string;
   carrier: string;
   notes?: string;
+  transporterId?: string;
+  transporterName?: string;
+  transportMode?: 'Road' | 'Rail' | 'Air' | 'Ship';
+  vehicleNumber?: string;
+  approxDistanceKm?: number;
 }
 
 export interface BranchSyncStatus {

@@ -45,6 +45,8 @@ import {
   Cell
 } from 'recharts';
 import { InventoryItem, InventoryAdjustment, Warehouse, Category, SalesOrder, ProductionOrder, PurchaseOrder } from '../types';
+import { Clock } from '../rules/clock';
+import { classifyStockAging, isDeadStock } from '../rules/aging';
 
 interface DeadStockDamagedPageProps {
   inventory: InventoryItem[];
@@ -143,7 +145,7 @@ export default function DeadStockDamagedPage({
   }, [inventory, salesOrders, orders, purchaseOrders]);
 
   const deadStockItems = useMemo(() => {
-    const currentDate = new Date('2026-05-28'); // Consistent simulated local time
+    const currentDate = Clock.getCurrentDate(); // Use central injectable clock
 
     return inventory.map(item => {
       const lastDateStr = lastMovementDates.get(item.id) || '2026-05-01';
@@ -458,8 +460,8 @@ export default function DeadStockDamagedPage({
               >
                 <option value={30}>30+ Days (All Slow)</option>
                 <option value={60}>60+ Days (Lagging)</option>
-                <option value={90}>90+ Days (Severely Dead)</option>
-                <option value={120}>120+ Days (Obsolete)</option>
+                <option value={90}>90+ Days (91-180d Slow-Moving)</option>
+                <option value={180}>180+ Days (Dead Stock - Obsolete)</option>
               </select>
             </div>
           )}
