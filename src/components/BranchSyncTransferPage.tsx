@@ -43,7 +43,12 @@ import {
   LineChart, 
   Line 
 } from 'recharts';
-import { InventoryItem, Warehouse, StockLevel, StockTransfer, BranchSyncStatus } from '../types';
+import { InventoryItem, Warehouse, StockLevel, StockTransfer, BranchSyncStatus, EwayBill, Staff, DeliveryChallan } from '../types';
+import { Language, tText } from '../locales';
+import { Clock } from '../rules/clock';
+import { determineEwbApplicability, createDeliveryChallanForTransfer } from '../rules/ewayBill';
+import EwayBillPanel from './EwayBillPanel';
+import DeliveryChallanModal from './DeliveryChallanModal';
 
 interface BranchSyncTransferPageProps {
   inventory: InventoryItem[];
@@ -57,6 +62,12 @@ interface BranchSyncTransferPageProps {
   onSyncBranch: (warehouseId: string) => void;
   onSyncAllBranches: () => void;
   checkPermission: (perm: string) => boolean;
+  ewayBills?: EwayBill[];
+  currentUser?: Staff;
+  language?: Language;
+  onGenerateEwb?: (transfer: StockTransfer, payload: any) => Promise<void>;
+  onUpdateEwbVehicle?: (ewbNo: string, payload: any) => Promise<void>;
+  onCancelEwb?: (ewbNo: string, payload: any) => Promise<void>;
 }
 
 export default function BranchSyncTransferPage({
@@ -70,9 +81,17 @@ export default function BranchSyncTransferPage({
   onUpdateTransferStatus,
   onSyncBranch,
   onSyncAllBranches,
-  checkPermission
+  checkPermission,
+  ewayBills = [],
+  currentUser,
+  language = 'en',
+  onGenerateEwb,
+  onUpdateEwbVehicle,
+  onCancelEwb
 }: BranchSyncTransferPageProps) {
   const [activeSubTab, setActiveSubTab] = useState<'transfers' | 'matrix' | 'sync'>('transfers');
+  const [activeTransferForEwb, setActiveTransferForEwb] = useState<StockTransfer | null>(null);
+  const [activeTransferForChallan, setActiveTransferForChallan] = useState<StockTransfer | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [openTransferDialog, setOpenTransferDialog] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
@@ -88,7 +107,12 @@ export default function BranchSyncTransferPage({
     destWarehouseId: '',
     quantity: '',
     carrier: '',
-    notes: ''
+    notes: '',
+    transporterName: '',
+    transporterId: '',
+    transportMode: 'Road' as 'Road' | 'Rail' | 'Air' | 'Ship',
+    vehicleNumber: '',
+    approxDistanceKm: ''
   });
 
   const [filterSourceWh, setFilterSourceWh] = useState<string>('all');
@@ -190,7 +214,12 @@ export default function BranchSyncTransferPage({
       status: 'pending',
       trackingNumber: serialNum,
       carrier: newTransfer.carrier || 'Express Inland Logistics',
-      notes: newTransfer.notes
+      notes: newTransfer.notes,
+      transporterName: newTransfer.transporterName || undefined,
+      transporterId: newTransfer.transporterId || undefined,
+      transportMode: newTransfer.transportMode,
+      vehicleNumber: newTransfer.vehicleNumber ? newTransfer.vehicleNumber.trim().toUpperCase() : undefined,
+      approxDistanceKm: newTransfer.approxDistanceKm ? Number(newTransfer.approxDistanceKm) : undefined
     });
 
     setOpenTransferDialog(false);
@@ -200,7 +229,12 @@ export default function BranchSyncTransferPage({
       destWarehouseId: '',
       quantity: '',
       carrier: '',
-      notes: ''
+      notes: '',
+      transporterName: '',
+      transporterId: '',
+      transportMode: 'Road',
+      vehicleNumber: '',
+      approxDistanceKm: ''
     });
 
     setSyncLogs(prev => [
@@ -223,11 +257,30 @@ export default function BranchSyncTransferPage({
                             t.trackingNumber.toLowerCase().includes(searchQuery.toLowerCase());
       
       const matchesSource = filterSourceWh === 'all' || t.sourceWarehouseId === filterSourceWh;
-      const matchesStatus = filterStatus === 'all' || t.status === filterStatus;
+      
+      let matchesStatus = false;
+      if (filterStatus === 'all') {
+        matchesStatus = true;
+      } else if (filterStatus === 'ewb_missing') {
+        const sourceWh = warehouses.find(w => w.id === t.sourceWarehouseId);
+        const destWh = warehouses.find(w => w.id === t.destWarehouseId);
+        const app = determineEwbApplicability({
+          documentType: 'transfer',
+          fromStateCode: sourceWh?.stateCode || '27',
+          toStateCode: destWh?.stateCode || '27',
+          fromGstin: sourceWh?.gstin,
+          toGstin: destWh?.gstin,
+          consignmentValue: t.quantity * 100
+        });
+        const hasActiveEwb = ewayBills.some(b => b.documentRefId === t.id && b.status === 'ACT');
+        matchesStatus = app.requirement === 'Required' && !hasActiveEwb && t.status !== 'cancelled';
+      } else {
+        matchesStatus = t.status === filterStatus;
+      }
 
       return matchesSearch && matchesSource && matchesStatus;
     });
-  }, [transfers, inventory, searchQuery, filterSourceWh, filterStatus]);
+  }, [transfers, inventory, searchQuery, filterSourceWh, filterStatus, warehouses, ewayBills]);
 
   // Aggregate stats
   const transferStats = useMemo(() => {
@@ -421,6 +474,7 @@ export default function BranchSyncTransferPage({
                 <option value="transit">In Transit</option>
                 <option value="received">Received / Completed</option>
                 <option value="cancelled">Cancelled</option>
+                <option value="ewb_missing">⚠️ {language === 'ta' ? "தேவைப்படும் ஆனால் விடுபட்டவை" : "Required and missing (E-Way Bill)"}</option>
               </select>
             </div>
 
@@ -525,6 +579,79 @@ export default function BranchSyncTransferPage({
                       </div>
                     </div>
 
+                    {/* Dispatch & Transportation Metadata */}
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dispatch & Transport Details</p>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold text-slate-700">Transport Mode</Label>
+                          <select 
+                            className="w-full h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs"
+                            value={newTransfer.transportMode}
+                            onChange={e => setNewTransfer({ ...newTransfer, transportMode: e.target.value as any })}
+                          >
+                            <option value="Road">Road (Standard Truck / Van)</option>
+                            <option value="Rail">Rail Cargo</option>
+                            <option value="Air">Air Express</option>
+                            <option value="Ship">Ship / Coastal</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold text-slate-700">Approx. Distance (km)</Label>
+                          <Input 
+                            type="number"
+                            min="1"
+                            placeholder="e.g. 150"
+                            className="h-8 rounded-lg border-slate-200 text-xs bg-white"
+                            value={newTransfer.approxDistanceKm}
+                            onChange={e => setNewTransfer({ ...newTransfer, approxDistanceKm: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold text-slate-700">Transporter Name</Label>
+                          <Input 
+                            placeholder="e.g. VRL Logistics / Blue Dart"
+                            className="h-8 rounded-lg border-slate-200 text-xs bg-white"
+                            value={newTransfer.transporterName}
+                            onChange={e => setNewTransfer({ ...newTransfer, transporterName: e.target.value })}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold text-slate-700">Transporter ID / GSTIN</Label>
+                          <Input 
+                            placeholder="15-char TRANSIN / GSTIN"
+                            className="h-8 rounded-lg border-slate-200 text-xs bg-white uppercase font-mono"
+                            value={newTransfer.transporterId}
+                            onChange={e => setNewTransfer({ ...newTransfer, transporterId: e.target.value.toUpperCase() })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-xs font-semibold text-slate-700">Vehicle Number</Label>
+                          <span className="text-[10px] text-slate-400">Required for Road transport</span>
+                        </div>
+                        <Input 
+                          placeholder="e.g. MH12AB1234 or 22BH1234AA"
+                          className="h-8 rounded-lg border-slate-200 text-xs bg-white uppercase font-mono"
+                          value={newTransfer.vehicleNumber}
+                          onChange={e => setNewTransfer({ ...newTransfer, vehicleNumber: e.target.value.toUpperCase() })}
+                        />
+                        {newTransfer.vehicleNumber && !/^[A-Z]{2}[0-9]{1,2}[A-Z]{1,3}[0-9]{4}$|^[0-9]{2}BH[0-9]{4}[A-Z]{1,2}$|^(TEMP|TR)[A-Z0-9]+$/i.test(newTransfer.vehicleNumber.trim().replace(/[-\s]/g, '')) && (
+                          <p className="text-[10px] text-amber-600 font-medium">
+                            ⚠️ Note: Plate format looks non-standard (standard: MH12AB1234 or 22BH1234AA). You may still create the transfer order.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
                     <div className="space-y-1.5">
                       <Label className="font-bold text-slate-700">Internal Logistic Notes</Label>
                       <Input 
@@ -598,7 +725,11 @@ export default function BranchSyncTransferPage({
                               <span className="text-slate-400 text-[10px]">➔</span>
                               <span className="text-teal-600">{destName}</span>
                             </div>
-                            <span className="text-[9px] text-gray-400 block mt-0.5">Vehicle Carrier: {trf.carrier}</span>
+                            <span className="text-[9px] text-gray-400 block mt-0.5">
+                              {trf.transportMode || 'Road'} • {trf.carrier}
+                              {trf.vehicleNumber && <span className="font-mono text-slate-600 font-semibold ml-1">[{trf.vehicleNumber}]</span>}
+                              {trf.approxDistanceKm && <span className="text-slate-500 ml-1">({trf.approxDistanceKm} km)</span>}
+                            </span>
                           </TableCell>
                           <TableCell className="text-center font-black text-slate-800 text-sm">
                             {trf.quantity} <span className="text-[10px] font-normal text-slate-400 font-sans">{item?.unit}</span>
@@ -615,15 +746,90 @@ export default function BranchSyncTransferPage({
                             }`}>
                               {trf.status.toUpperCase()}
                             </Badge>
+
+                            {/* In-Transit Validity Link & Expiry Indicator */}
+                            {trf.status === 'transit' && (() => {
+                              const ewb = ewayBills.find(b => b.documentRefId === trf.id && b.status === 'ACT');
+                              if (ewb) {
+                                const now = Clock.getCurrentDate().getTime();
+                                const exp = new Date(ewb.validUpto).getTime();
+                                const diffHours = (exp - now) / (1000 * 60 * 60);
+                                const isPast = diffHours <= 0;
+                                if (isPast) {
+                                  return (
+                                    <span className="text-[9px] font-black text-rose-600 block mt-1 animate-pulse">
+                                      ⚠️ EXPIRED in Transit
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="text-[9px] font-mono text-amber-700 font-bold block mt-0.5">
+                                    Expires in {Math.ceil(diffHours)}h
+                                  </span>
+                                );
+                              } else {
+                                const sourceWh = warehouses.find(w => w.id === trf.sourceWarehouseId);
+                                const destWh = warehouses.find(w => w.id === trf.destWarehouseId);
+                                const app = determineEwbApplicability({
+                                  documentType: 'transfer',
+                                  fromStateCode: sourceWh?.stateCode || '27',
+                                  toStateCode: destWh?.stateCode || '27',
+                                  fromGstin: sourceWh?.gstin,
+                                  toGstin: destWh?.gstin,
+                                  consignmentValue: trf.quantity * 100
+                                });
+                                if (app.requirement === 'Required') {
+                                  return (
+                                    <span className="text-[9px] font-bold text-amber-600 block mt-0.5">
+                                      EWB Missing
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              }
+                            })()}
                           </TableCell>
                           <TableCell className="py-2 text-right pr-6">
-                            <div className="flex justify-end gap-1.5">
+                            <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                              <Button 
+                                size="xs" 
+                                variant="outline" 
+                                className="h-7 text-[10px] text-slate-700 border-slate-200 hover:bg-slate-50 font-bold rounded-lg flex items-center gap-1"
+                                onClick={() => setActiveTransferForChallan(trf)}
+                              >
+                                <FileText size={10} /> Challan
+                              </Button>
+
+                              <Button 
+                                size="xs" 
+                                variant="outline" 
+                                className="h-7 text-[10px] text-indigo-700 border-indigo-200 hover:bg-indigo-50 font-bold rounded-lg flex items-center gap-1"
+                                onClick={() => setActiveTransferForEwb(trf)}
+                              >
+                                <Truck size={10} /> E-Way Bill
+                              </Button>
+
                               {trf.status === 'pending' && (
                                 <>
                                   <Button 
                                     size="xs" 
                                     className="h-7 text-[10px] font-black bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center gap-1"
                                     onClick={() => {
+                                      const sourceWh = warehouses.find(w => w.id === trf.sourceWarehouseId);
+                                      const destWh = warehouses.find(w => w.id === trf.destWarehouseId);
+                                      const app = determineEwbApplicability({
+                                        documentType: 'transfer',
+                                        fromStateCode: sourceWh?.stateCode || '27',
+                                        toStateCode: destWh?.stateCode || '27',
+                                        fromGstin: sourceWh?.gstin,
+                                        toGstin: destWh?.gstin,
+                                        consignmentValue: trf.quantity * 100
+                                      });
+                                      const hasActiveEwb = ewayBills.some(b => b.documentRefId === trf.id && b.status === 'ACT');
+                                      if (app.requirement === 'Required' && !hasActiveEwb) {
+                                        alert(`⚠️ Statutory Transit Warning: Consignment value for transfer shipment ${trf.trackingNumber} requires an active statutory E-Way Bill under Rule 138, but none has been generated. Cargo dispatch is permitted and proceeding.`);
+                                      }
+
                                       onUpdateTransferStatus(trf.id, 'transit');
                                       setSyncLogs(prev => [
                                         `[${new Date().toLocaleTimeString()}] 🚚 Dispatched cargo truck. Transfer ${trf.trackingNumber} status is now IN TRANSIT.`,
@@ -985,6 +1191,92 @@ export default function BranchSyncTransferPage({
           </div>
         </div>
       )}
+
+      {/* Transfer E-Way Bill Modal */}
+      {activeTransferForEwb && (() => {
+        const trf = activeTransferForEwb;
+        const sourceWh = warehouses.find(w => w.id === trf.sourceWarehouseId) || warehouses[0];
+        const destWh = warehouses.find(w => w.id === trf.destWarehouseId) || warehouses[1];
+        const item = inventory.find(i => i.id === trf.itemId);
+        const declaredCost = 100;
+        const totalValue = trf.quantity * declaredCost;
+        const existingEwb = ewayBills.find(b => b.documentRefId === trf.id);
+
+        return (
+          <Dialog open={Boolean(activeTransferForEwb)} onOpenChange={(open) => !open && setActiveTransferForEwb(null)}>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Truck className="w-5 h-5 text-indigo-600" />
+                  E-Way Bill: Transfer Shipment {trf.trackingNumber}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  Manage statutory e-way bill for movement between {sourceWh.name} ({sourceWh.location}) and {destWh.name} ({destWh.location}).
+                </DialogDescription>
+              </DialogHeader>
+
+              <EwayBillPanel 
+                documentRefId={trf.id}
+                documentRefType="transfer"
+                documentNumber={trf.trackingNumber}
+                documentDate={trf.date}
+                consignmentValue={totalValue}
+                fromWarehouse={sourceWh}
+                toParty={{
+                  gstin: destWh.gstin,
+                  legalName: destWh.legalName || destWh.name,
+                  tradeName: destWh.name,
+                  addressLines: destWh.addressLines || [destWh.location],
+                  place: destWh.location,
+                  stateCode: destWh.stateCode || '27',
+                  pin: destWh.pin || '411014'
+                }}
+                items={[
+                  {
+                    productId: item?.id,
+                    productName: item?.name || 'Transferred Item',
+                    hsnCode: item?.hsnCode || '5208',
+                    quantity: trf.quantity,
+                    unit: item?.unit || 'units',
+                    taxableAmount: totalValue,
+                    gstRate: 0
+                  }
+                ]}
+                transMode={trf.transportMode || 'Road'}
+                transporterId={trf.transporterId}
+                transporterName={trf.transporterName || trf.carrier}
+                vehicleNumber={trf.vehicleNumber}
+                approxDistanceKm={trf.approxDistanceKm || 150}
+                existingEwb={existingEwb}
+                currentUser={currentUser || { id: 'usr-1', name: 'User', role: 'admin', email: 'user@company.com', permissions: {} as any }}
+                language={language}
+                onGenerate={(payload) => onGenerateEwb ? onGenerateEwb(trf, payload) : Promise.resolve()}
+                onUpdateVehicle={(ewbNo, payload) => onUpdateEwbVehicle ? onUpdateEwbVehicle(ewbNo, payload) : Promise.resolve()}
+                onCancel={(ewbNo, payload) => onCancelEwb ? onCancelEwb(ewbNo, payload) : Promise.resolve()}
+              />
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
+
+      {/* Transfer Delivery Challan Modal */}
+      {activeTransferForChallan && (() => {
+        const trf = activeTransferForChallan;
+        const sourceWh = warehouses.find(w => w.id === trf.sourceWarehouseId) || warehouses[0];
+        const destWh = warehouses.find(w => w.id === trf.destWarehouseId) || warehouses[1];
+        const item = inventory.find(i => i.id === trf.itemId) || { id: '1', name: 'Goods', unit: 'units', hsnCode: '5208' } as any;
+        const challan = createDeliveryChallanForTransfer(trf, item, sourceWh, destWh);
+        const ewb = ewayBills.find(b => b.documentRefId === trf.id);
+
+        return (
+          <DeliveryChallanModal 
+            open={Boolean(activeTransferForChallan)}
+            onOpenChange={(open) => !open && setActiveTransferForChallan(null)}
+            challan={challan}
+            ewayBill={ewb}
+          />
+        );
+      })()}
       
     </div>
   );

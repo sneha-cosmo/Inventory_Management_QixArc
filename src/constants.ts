@@ -1,4 +1,4 @@
-import { InventoryItem, ProductionOrder, Warehouse, Category, Customer, Invoice, Payment, SalesOrder, Supplier, PurchaseOrder, InventoryAdjustment } from './types';
+import { InventoryItem, ProductionOrder, Warehouse, Category, Customer, Invoice, Payment, SalesOrder, Supplier, PurchaseOrder, InventoryAdjustment, EwayBill } from './types';
 
 export const INITIAL_INVENTORY: InventoryItem[] = [
   {
@@ -362,5 +362,64 @@ export const INITIAL_ADJUSTMENTS: InventoryAdjustment[] = [
   { id: 'ADJ-003', itemId: '4', warehouseId: 'wh-2', type: 'damage', quantity: -10, date: '2026-05-22', reason: 'Friction tear during inter-depot transit', severity: 'Minor', disposition: 'Sold at Discount' },
   { id: 'ADJ-004', itemId: '2', warehouseId: 'wh-1', type: 'return', quantity: 20, date: '2026-05-25', reason: 'Unused thread spool core return' }
 ];
+
+export const INITIAL_EWAY_BILLS: EwayBill[] = [
+  {
+    id: 'EWB-001',
+    ewbNo: '101928374650',
+    ewbDate: '2026-05-27T10:00:00.000Z',
+    validUpto: '2026-05-29T23:59:59.000Z',
+    docType: 'CHL',
+    docNo: 'CHL-AWB-109038',
+    docDate: '2026-05-27',
+    documentRefId: 'TRF-002',
+    documentRefType: 'transfer',
+    status: 'ACT',
+    genMode: 'mock',
+    isSandbox: true,
+    fromWarehouseId: 'wh-2',
+    fromGstin: '27AAAAA0000A1Z5',
+    fromTrdName: 'InvPredict Regional Logistics Depot',
+    fromAddr1: 'Sector 4, MIDC, Viman Nagar',
+    fromPlace: 'Pune',
+    fromPincode: '411014',
+    fromStateCode: '27',
+    actFromStateCode: '27',
+    toWarehouseId: 'wh-1',
+    toGstin: '27AAAAA0000A1Z5',
+    toTrdName: 'InvPredict Manufacturing Central Hub',
+    toAddr1: 'Plot 12, Industrial Area, Andheri East',
+    toPlace: 'Mumbai',
+    toPincode: '400001',
+    toStateCode: '27',
+    actToStateCode: '27',
+    totalValue: 12000,
+    taxableAmount: 12000,
+    cgstValue: 0,
+    sgstValue: 0,
+    igstValue: 0,
+    cessValue: 0,
+    transMode: 'Road',
+    transporterName: 'Delhivery Surface Logistics',
+    vehicleNumber: 'MH14CD5678',
+    vehicleType: 'R',
+    approxDistanceKm: 150,
+    items: [
+      {
+        itemNo: 1,
+        productId: '4',
+        productName: 'Golden Border Lace',
+        hsnCode: '5808',
+        quantity: 100,
+        qtyUnit: 'meters',
+        taxableAmount: 12000,
+        cgstRate: 0,
+        sgstRate: 0,
+        igstRate: 0
+      }
+    ]
+  }
+];
+
 
 

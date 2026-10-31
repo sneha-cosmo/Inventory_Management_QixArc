@@ -247,3 +247,182 @@ export interface Staff {
     manageStaff: boolean;
   };
 }
+
+export type EwayBillStatus = 'ACT' | 'CNL' | 'EXP';
+export type EwayBillDocType = 'INV' | 'CHL' | 'BIL';
+export type EwayBillTransportMode = 'Road' | 'Rail' | 'Air' | 'Ship';
+export type EwayBillVehicleType = 'R' | 'O'; // R = Regular, O = Over Dimensional Cargo
+
+export interface EwayBillItem {
+  itemNo: number;
+  productId?: string;
+  productName: string;
+  hsnCode: string;
+  quantity: number;
+  qtyUnit: string;
+  taxableAmount: number;
+  cgstRate: number;
+  sgstRate: number;
+  igstRate: number;
+  cessRate?: number;
+}
+
+export interface EwayBill {
+  id: string;
+  ewbNo: string; // 12-digit e-way bill number
+  ewbDate: string; // ISO string or statutory format
+  validUpto: string; // ISO string
+  docType: EwayBillDocType;
+  docNo: string;
+  docDate: string;
+  documentRefId: string; // Invoice ID or StockTransfer ID
+  documentRefType: 'invoice' | 'transfer';
+  status: EwayBillStatus;
+  genMode: 'mock' | 'sandbox' | 'live';
+  isSandbox: boolean; // Flag showing "SANDBOX - NOT A REAL E-WAY BILL"
+  
+  // From details (Dispatching Warehouse)
+  fromWarehouseId?: string;
+  fromGstin: string;
+  fromTrdName: string;
+  fromAddr1: string;
+  fromPlace: string;
+  fromPincode: string;
+  fromStateCode: string;
+  actFromStateCode: string;
+
+  // To details (Recipient Customer or Receiving Warehouse)
+  toCustomerId?: string;
+  toWarehouseId?: string;
+  toGstin: string;
+  toTrdName: string;
+  toAddr1: string;
+  toPlace: string;
+  toPincode: string;
+  toStateCode: string;
+  actToStateCode: string;
+
+  // Values & Taxes
+  totalValue: number;
+  taxableAmount: number;
+  cgstValue: number;
+  sgstValue: number;
+  igstValue: number;
+  cessValue: number;
+
+  // Transport details (Part-B)
+  transMode: EwayBillTransportMode;
+  transporterId?: string;
+  transporterName?: string;
+  transDocNo?: string;
+  transDocDate?: string;
+  vehicleNumber?: string;
+  vehicleType: EwayBillVehicleType;
+  approxDistanceKm: number;
+
+  // Cancellation details
+  cancelDate?: string;
+  cancelReason?: string; // '1: Duplicate' | '2: Order Cancelled' | '3: Data Entry Mistake' | '4: Others'
+  cancelRemarks?: string;
+
+  // Vehicle update history
+  vehicleUpdates?: {
+    updatedAt: string;
+    oldVehicleNumber?: string;
+    newVehicleNumber: string;
+    fromPlace: string;
+    fromState: string;
+    reason: string;
+    transDocNo?: string;
+  }[];
+
+  items: EwayBillItem[];
+}
+
+export interface DeliveryChallan {
+  id: string;
+  challanNumber: string; // E.g. CHL-2026-001
+  challanDate: string;
+  transferId: string;
+  sourceWarehouseId: string;
+  destWarehouseId: string;
+  fromLegalName: string;
+  fromGstin: string;
+  fromAddress: string;
+  fromStateCode: string;
+  fromPin: string;
+  toLegalName: string;
+  toGstin: string;
+  toAddress: string;
+  toStateCode: string;
+  toPin: string;
+  itemId: string;
+  itemName: string;
+  hsnCode: string;
+  quantity: number;
+  unit: string;
+  declaredValue: number;
+  reasonForTransportation: 'Supply' | 'For Own Use' | 'Job Work' | 'Others';
+  isSameGstin: boolean;
+  distinctPersonsNotice?: string;
+}
+
+export interface EwayBillSettings {
+  interStateThreshold: number; // Default 50,000
+  stateThresholdOverrides: Record<string, number>; // State code -> threshold (e.g. '33': 100,000 for TN)
+  cancellationWindowHours: number; // Default 24 hours
+  regularKmPerDay: number; // Default 200 km/day
+  odcKmPerDay: number; // Default 20 km/day
+  enableShipToGstin: boolean; // Optional toggle, default false
+  enableVoluntaryClosure: boolean; // Optional toggle, default false
+  accountantConfirmationNote: string; // "Confirm current rules with your accountant."
+}
+
+export interface EwayBillGenerateRequest {
+  documentRefId: string;
+  documentRefType: 'invoice' | 'transfer';
+  docType: EwayBillDocType;
+  docNo: string;
+  docDate: string;
+  fromWarehouse: Warehouse;
+  toParty: {
+    gstin?: string;
+    legalName?: string;
+    tradeName?: string;
+    addressLines?: string[];
+    place: string;
+    stateCode: string;
+    pin: string;
+  };
+  items: {
+    productId?: string;
+    productName: string;
+    hsnCode: string;
+    quantity: number;
+    unit: string;
+    taxableAmount: number;
+    gstRate: number;
+  }[];
+  transMode: EwayBillTransportMode;
+  transporterId?: string;
+  transporterName?: string;
+  vehicleNumber?: string;
+  vehicleType?: EwayBillVehicleType;
+  approxDistanceKm: number;
+  isExemptGoods?: boolean;
+}
+
+export interface EwayBillUpdateVehicleRequest {
+  newVehicleNumber: string;
+  fromPlace: string;
+  fromState: string;
+  reason: string;
+  transDocNo?: string;
+  transMode?: EwayBillTransportMode;
+}
+
+export interface EwayBillCancelRequest {
+  cancelReason: string; // '1' | '2' | '3' | '4'
+  cancelRemarks: string;
+}
+

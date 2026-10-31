@@ -526,6 +526,33 @@ const TAMIL_PHRASES: Record<string, string> = {
   "labels": "லேபிள்கள் (Labels)",
   "packaging": "பேக்கேஜிங் (Packaging)",
   "accessories": "துணை பொருட்கள் (Accessories)",
+
+  // E-Way Bill & Delivery Challan
+  "e-way bill": "மின்னணு வழிச்சீட்டு (E-Way Bill)",
+  "eway bill": "மின்னணு வழிச்சீட்டு (E-Way Bill)",
+  "generate e-way bill": "மின்னணு வழிச்சீட்டு உருவாக்குக",
+  "delivery challan": "விநியோக சலான் (Delivery Challan)",
+  "update vehicle": "வாகன விவரங்களை புதுப்பிக்கவும்",
+  "cancel e-way bill": "வழிச்சீட்டை ரத்து செய்க",
+  "sandbox - not a real e-way bill": "சாண்ட்பாக்ஸ் - உண்மையான வழிச்சீட்டு அல்ல (SANDBOX)",
+  "valid until": "செல்லுபடியாகும் காலம்",
+  "not required": "தேவை இல்லை",
+  "required": "கட்டாயம் தேவை",
+  "optional": "விருப்பத்திற்குரியது",
+  "ready": "தயாராக உள்ளது",
+  "generated": "உருவாக்கப்பட்டது",
+  "cancelled": "ரத்து செய்யப்பட்டது",
+  "failed": "தோல்வியடைந்தது",
+  "required and missing": "தேவைப்படும் ஆனால் விடுபட்டவை",
+  "transport mode": "போக்குவரத்து முறை",
+  "vehicle number": "வாகன எண்",
+  "distance": "தூரம்",
+  "transporter id": "போக்குவரத்தாளர் ஐடி",
+  "transporter name": "போக்குவரத்தாளர் பெயர்",
+  "print e-way bill": "வழிச்சீட்டை அச்சிடுக",
+  "confirm current rules with your accountant.": "தற்போதைய விதிகளை உங்கள் கணக்காளரிடம் உறுதிப்படுத்தவும்.",
+  "expires in": "காலாவதியாகிறது",
+  "active in transit": "பயணத்தில் உள்ளது"
 };
 
 export function tText(text: string, lang: Language): string {

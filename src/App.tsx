@@ -34,7 +34,8 @@ import {
   Users,
   Lock,
   Shield,
-  UploadCloud
+  UploadCloud,
+  FlaskConical
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -92,7 +93,9 @@ import {
   Staff,
   StockTransfer,
   BranchSyncStatus,
-  StockLevel
+  StockLevel,
+  EwayBill,
+  DeliveryChallan
 } from './types';
 import { 
   INITIAL_INVENTORY, 
@@ -105,7 +108,8 @@ import {
   INITIAL_SALES_ORDERS,
   INITIAL_SUPPLIERS,
   INITIAL_PURCHASE_ORDERS,
-  INITIAL_ADJUSTMENTS
+  INITIAL_ADJUSTMENTS,
+  INITIAL_EWAY_BILLS
 } from './constants';
 
 import { LOCALES, Language, tText } from './locales';
@@ -118,12 +122,21 @@ import TallySyncPanel from './components/TallySyncPanel';
 import SplitMergePanel from './components/SplitMergePanel';
 import EasyTaxFilingPanel from './components/EasyTaxFilingPanel';
 import RoleStaffManagementPanel from './components/RoleStaffManagementPanel';
+import SelfTestPage from './components/SelfTestPage';
 import BulkImportModal from './components/BulkImportModal';
 import { DuplicatePolicy } from './utils/bulkImport';
 import BatchImportModal from './components/BatchImportModal';
 import { BatchDuplicatePolicy } from './utils/batchImport';
 import { NotificationCenterPanel } from './components/NotificationCenterPanel';
 import { NotificationSettingsModal } from './components/NotificationSettingsModal';
+import EwayBillPanel from './components/EwayBillPanel';
+import DeliveryChallanModal from './components/DeliveryChallanModal';
+import { createEwayBillProvider } from './services/ewayBillProvider';
+import { 
+  determineEwbApplicability, 
+  createDeliveryChallanForTransfer, 
+  DEFAULT_EWAY_BILL_SETTINGS 
+} from './rules/ewayBill';
 import {
   NotificationSettings,
   DEFAULT_NOTIFICATION_SETTINGS,
@@ -354,7 +367,47 @@ export default function App() {
   const [staff, setStaff] = useState<Staff[]>(INITIAL_STAFF);
   const [currentStaffId, setCurrentStaffId] = useState<string>('STF-001');
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
-  const [activeTab, setActiveTab] = useState('overview');
+  
+  // E-Way Bill statutory records & provider instance
+  const [ewayBills, setEwayBills] = useState<EwayBill[]>(INITIAL_EWAY_BILLS);
+  const [ewbSettings, setEwbSettings] = useState<EwayBillSettings>(DEFAULT_EWAY_BILL_SETTINGS);
+  const ewayBillProvider = useMemo(() => createEwayBillProvider(), []);
+  
+  // URL Route detection for /self-test
+  const isInitialSelfTest = typeof window !== 'undefined' && (
+    window.location.pathname === '/self-test' ||
+    window.location.pathname.endsWith('/self-test') ||
+    window.location.hash === '#/self-test'
+  );
+  const [activeTab, setActiveTab] = useState(isInitialSelfTest ? 'self_test' : 'overview');
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (
+        window.location.pathname === '/self-test' ||
+        window.location.pathname.endsWith('/self-test') ||
+        window.location.hash === '#/self-test'
+      ) {
+        setActiveTab('self_test');
+      } else if (activeTab === 'self_test') {
+        setActiveTab('overview');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [activeTab]);
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    if (typeof window !== 'undefined') {
+      if (tab === 'self_test') {
+        window.history.pushState(null, '', '/self-test');
+      } else if (window.location.pathname === '/self-test') {
+        window.history.pushState(null, '', '/');
+      }
+    }
+  };
+
   const [reportsSubTab, setReportsSubTab] = useState('p_n_l');
   const [language, setLanguage] = useState<Language>('en');
   const t = LOCALES[language];
@@ -382,6 +435,10 @@ export default function App() {
       status: 'received',
       trackingNumber: 'TRF-AWB-823901',
       carrier: 'Blue Dart India',
+      transporterName: 'Blue Dart India',
+      transportMode: 'Road',
+      vehicleNumber: 'MH12AB1234',
+      approxDistanceKm: 150,
       notes: 'Cotton Fiber balance realignment'
     },
     {
@@ -394,6 +451,10 @@ export default function App() {
       status: 'transit',
       trackingNumber: 'TRF-AWB-109038',
       carrier: 'Delhivery Surface Logistics',
+      transporterName: 'Delhivery Surface Logistics',
+      transportMode: 'Road',
+      vehicleNumber: 'MH14CD5678',
+      approxDistanceKm: 150,
       notes: 'Golden lace urgent deployment for Mumbai sewing factory'
     }
   ]);
@@ -591,7 +652,6 @@ export default function App() {
     };
   }, [varianceAnalysis, reorderPredictions, salesOrders, purchaseOrders]);
 
-  // Handlers
   const addAuditLog = (action: string, entityType: string, entityId: string, details: string) => {
     const newLog = createAuditEvent({
       action,
@@ -603,6 +663,205 @@ export default function App() {
       operatorId: currentUser?.id
     });
     setAuditLogs([newLog, ...auditLogs]);
+  };
+
+  // E-Way Bill Business Logic Handlers
+  const handleGenerateEwbForInvoice = async (
+    invoice: Invoice, 
+    order: SalesOrder, 
+    payload: {
+      transMode: any;
+      transporterId?: string;
+      transporterName?: string;
+      vehicleNumber?: string;
+      approxDistanceKm: number;
+    }
+  ) => {
+    try {
+      const customer = customers.find(c => c.id === order.customerId);
+      const defaultWh = warehouses[0]; // Dispatching warehouse
+      const mappedItems = order.items.map(it => {
+        const invItem = inventory.find(i => i.id === it.itemId);
+        return {
+          productId: it.itemId,
+          productName: invItem?.name || 'Goods',
+          hsnCode: invItem?.hsnCode || '5208',
+          quantity: it.quantity,
+          unit: invItem?.unit || 'units',
+          taxableAmount: it.quantity * it.rate,
+          gstRate: invItem?.gstRate ?? 18
+        };
+      });
+
+      const req = {
+        documentRefId: invoice.id,
+        documentRefType: 'invoice' as const,
+        docType: 'INV' as const,
+        docNo: invoice.id,
+        docDate: invoice.date,
+        fromWarehouse: defaultWh,
+        toParty: {
+          gstin: customer?.gstin,
+          legalName: customer?.legalName || customer?.name,
+          tradeName: customer?.name,
+          addressLines: customer?.addressLines || [customer?.address || 'Mumbai'],
+          place: customer?.state || 'Mumbai',
+          stateCode: customer?.stateCode || '27',
+          pin: customer?.pin || '400050'
+        },
+        items: mappedItems,
+        transMode: payload.transMode,
+        transporterId: payload.transporterId,
+        transporterName: payload.transporterName,
+        vehicleNumber: payload.vehicleNumber,
+        approxDistanceKm: payload.approxDistanceKm
+      };
+
+      const newEwb = await ewayBillProvider.generate(req);
+      setEwayBills(prev => [newEwb, ...prev]);
+
+      addAuditLog(
+        'Generate E-Way Bill', 
+        'EwayBill', 
+        newEwb.ewbNo, 
+        `E-Way Bill ${newEwb.ewbNo} generated for invoice ${invoice.id}. Consignment: ₹${newEwb.totalValue.toLocaleString()}. Provider: ${newEwb.isSandbox ? 'SANDBOX (Simulation)' : 'GSP API'}. Vehicle: ${newEwb.vehicleNumber || 'N/A'}. Distance: ${newEwb.approxDistanceKm} km.`
+      );
+    } catch (err: any) {
+      addAuditLog(
+        'E-Way Bill Generation Failed',
+        'Invoice',
+        invoice.id,
+        `E-Way Bill generation failed for invoice ${invoice.id}: ${err.message}`
+      );
+      throw err;
+    }
+  };
+
+  const handleGenerateEwbForTransfer = async (
+    transfer: StockTransfer,
+    payload: {
+      transMode: any;
+      transporterId?: string;
+      transporterName?: string;
+      vehicleNumber?: string;
+      approxDistanceKm: number;
+    }
+  ) => {
+    try {
+      const sourceWh = warehouses.find(w => w.id === transfer.sourceWarehouseId) || warehouses[0];
+      const destWh = warehouses.find(w => w.id === transfer.destWarehouseId) || warehouses[1];
+      const item = inventory.find(i => i.id === transfer.itemId);
+      const declaredCost = 100;
+      const isSameGstin = Boolean(sourceWh.gstin && destWh.gstin && sourceWh.gstin.trim().toUpperCase() === destWh.gstin.trim().toUpperCase());
+
+      const req = {
+        documentRefId: transfer.id,
+        documentRefType: 'transfer' as const,
+        docType: (isSameGstin ? 'CHL' : 'INV') as any,
+        docNo: `TRF-${transfer.trackingNumber}`,
+        docDate: transfer.date,
+        fromWarehouse: sourceWh,
+        toParty: {
+          gstin: destWh.gstin,
+          legalName: destWh.legalName || destWh.name,
+          tradeName: destWh.name,
+          addressLines: destWh.addressLines || [destWh.location],
+          place: destWh.location,
+          stateCode: destWh.stateCode || '27',
+          pin: destWh.pin || '411014'
+        },
+        items: [
+          {
+            productId: item?.id,
+            productName: item?.name || 'Transferred Goods',
+            hsnCode: item?.hsnCode || '5208',
+            quantity: transfer.quantity,
+            unit: item?.unit || 'units',
+            taxableAmount: transfer.quantity * declaredCost,
+            gstRate: isSameGstin ? 0 : (item?.gstRate ?? 18)
+          }
+        ],
+        transMode: payload.transMode,
+        transporterId: payload.transporterId,
+        transporterName: payload.transporterName,
+        vehicleNumber: payload.vehicleNumber,
+        approxDistanceKm: payload.approxDistanceKm
+      };
+
+      const newEwb = await ewayBillProvider.generate(req);
+      setEwayBills(prev => [newEwb, ...prev]);
+
+      addAuditLog(
+        'Generate E-Way Bill', 
+        'EwayBill', 
+        newEwb.ewbNo, 
+        `E-Way Bill ${newEwb.ewbNo} generated for stock transfer ${transfer.trackingNumber}. Type: ${newEwb.docType}. Provider: ${newEwb.isSandbox ? 'SANDBOX (Simulation)' : 'GSP API'}. Vehicle: ${newEwb.vehicleNumber || 'N/A'}. Distance: ${newEwb.approxDistanceKm} km.`
+      );
+    } catch (err: any) {
+      addAuditLog(
+        'E-Way Bill Generation Failed',
+        'StockTransfer',
+        transfer.id,
+        `E-Way Bill generation failed for transfer ${transfer.trackingNumber}: ${err.message}`
+      );
+      throw err;
+    }
+  };
+
+  const handleUpdateEwbVehicle = async (
+    ewbNo: string,
+    payload: {
+      newVehicleNumber: string;
+      fromPlace: string;
+      fromState: string;
+      reason: string;
+    }
+  ) => {
+    try {
+      const updated = await ewayBillProvider.updateVehicle(ewbNo, payload);
+      setEwayBills(prev => prev.map(b => b.ewbNo === ewbNo ? updated : b));
+      addAuditLog(
+        'Update E-Way Bill Vehicle',
+        'EwayBill',
+        ewbNo,
+        `Part-B vehicle updated for E-Way Bill ${ewbNo} to ${payload.newVehicleNumber} at ${payload.fromPlace}. Reason: ${payload.reason}.`
+      );
+    } catch (err: any) {
+      addAuditLog(
+        'Update E-Way Bill Vehicle Failed',
+        'EwayBill',
+        ewbNo,
+        `Failed to update vehicle for E-Way Bill ${ewbNo}: ${err.message}`
+      );
+      throw err;
+    }
+  };
+
+  const handleCancelEwb = async (
+    ewbNo: string,
+    payload: {
+      cancelReason: string;
+      cancelRemarks: string;
+    }
+  ) => {
+    try {
+      const updated = await ewayBillProvider.cancel(ewbNo, payload);
+      setEwayBills(prev => prev.map(b => b.ewbNo === ewbNo ? updated : b));
+      addAuditLog(
+        'Cancel E-Way Bill',
+        'EwayBill',
+        ewbNo,
+        `E-Way Bill ${ewbNo} cancelled by ${currentUser.name} (${currentUser.role}). Reason: ${payload.cancelReason}. Remarks: ${payload.cancelRemarks}.`
+      );
+    } catch (err: any) {
+      addAuditLog(
+        'Cancel E-Way Bill Failed',
+        'EwayBill',
+        ewbNo,
+        `Failed to cancel E-Way Bill ${ewbNo}: ${err.message}`
+      );
+      throw err;
+    }
   };
 
   const handleAddPlannedOrder = (newOrder: ProductionOrder) => {
@@ -1031,10 +1290,18 @@ export default function App() {
           />
           <NavButton 
             active={activeTab === 'audit'} 
-            onClick={() => setActiveTab('audit')}
+            onClick={() => handleTabChange('audit')}
             icon={<ShieldCheck size={18} />}
             label={t.auditLogs}
           />
+          {currentUser.role === 'admin' && (
+            <NavButton 
+              active={activeTab === 'self_test'} 
+              onClick={() => handleTabChange('self_test')}
+              icon={<FlaskConical size={18} />}
+              label="Rules Self-Test"
+            />
+          )}
         </nav>
 
         <div className="p-6 pt-3 shrink-0 border-t border-gray-100 bg-white">
@@ -1067,6 +1334,7 @@ export default function App() {
               {activeTab === 'staff' && t.staffRolePermissions}
               {activeTab === 'audit' && t.systemAuditLogs}
               {activeTab === 'dead_damaged' && t.deadStockDamagedGoods}
+              {activeTab === 'self_test' && "Rules Diagnostic Self-Test (/self-test)"}
             </h2>
             <p className="text-gray-500 mt-1">
               {activeTab === 'overview' && t.realTimeMonitoring}
@@ -1083,6 +1351,7 @@ export default function App() {
               {activeTab === 'staff' && t.configurePermissions}
               {activeTab === 'audit' && t.reviewAllSystem}
               {activeTab === 'dead_damaged' && t.agedObsoleteStock}
+              {activeTab === 'self_test' && "Live verification of business formulas, FIFO valuation, GST calculations, and safety rules"}
             </p>
           </div>
           
@@ -1903,6 +2172,13 @@ export default function App() {
                   addAuditLog('Global Branch Sync', 'Warehouse', 'ALL', 'Dispatched multi-branch sync requests to regional cloud buffers; all hubs report 100% database parity.');
                 }}
                 checkPermission={(perm) => checkPermission(perm as any)}
+              />
+            )}
+
+            {activeTab === 'self_test' && (
+              <SelfTestPage 
+                currentUser={currentUser} 
+                onNavigateHome={() => handleTabChange('overview')} 
               />
             )}
           </motion.div>
@@ -3365,22 +3641,69 @@ function PurchasePage({
   );
 }
 
-function SalesPage({ salesOrders, inventory, customers, invoices, onGenerateIRN, onAddSO, language = 'en' }: {
+function SalesPage({ 
+  salesOrders, 
+  inventory, 
+  customers, 
+  invoices, 
+  onGenerateIRN, 
+  onAddSO, 
+  language = 'en',
+  warehouses,
+  ewayBills = [],
+  currentUser,
+  onGenerateEwb,
+  onUpdateEwbVehicle,
+  onCancelEwb,
+  ewbSettings = DEFAULT_EWAY_BILL_SETTINGS,
+  onUpdateSOStatus
+}: {
   salesOrders: SalesOrder[],
   inventory: InventoryItem[],
   customers: Customer[],
   invoices: Invoice[],
   onGenerateIRN: (invoiceId: string) => void,
   onAddSO: (so: SalesOrder) => void,
-  language?: Language
+  language?: Language,
+  warehouses?: Warehouse[],
+  ewayBills?: EwayBill[],
+  currentUser?: Staff,
+  onGenerateEwb?: (invoice: Invoice, order: SalesOrder, payload: any) => Promise<void>,
+  onUpdateEwbVehicle?: (ewbNo: string, payload: any) => Promise<void>,
+  onCancelEwb?: (ewbNo: string, payload: any) => Promise<void>,
+  ewbSettings?: EwayBillSettings,
+  onUpdateSOStatus?: (soId: string, status: SalesOrder['status']) => void
 }) {
   const [open, setOpen] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [formData, setFormData] = useState({ customerId: '', itemId: '', quantity: '', rate: '' });
 
   const selectedItem = inventory.find(i => i.id === formData.itemId);
   const availableStock = selectedItem ? selectedItem.currentStock : 0;
   const requestedQty = Number(formData.quantity) || 0;
   const isOverStock = formData.itemId ? requestedQty > availableStock : false;
+
+  const filteredSalesOrders = useMemo(() => {
+    return salesOrders.filter(so => {
+      if (filterStatus === 'all') return true;
+      if (filterStatus === 'ewb_missing') {
+        const inv = invoices.find(i => i.orderId === so.id);
+        const cust = customers.find(c => c.id === so.customerId);
+        const defaultWh = warehouses?.[0];
+        const app = determineEwbApplicability({
+          documentType: 'sales_invoice',
+          fromStateCode: defaultWh?.stateCode || '27',
+          toStateCode: cust?.stateCode || '27',
+          fromGstin: defaultWh?.gstin,
+          toGstin: cust?.gstin,
+          consignmentValue: so.totalAmount
+        });
+        const hasEwb = ewayBills?.some(b => (b.documentRefId === inv?.id || b.documentRefId === so.id) && b.status === 'ACT');
+        return so.status === 'pending' && app.requirement === 'Required' && !hasEwb;
+      }
+      return so.status === filterStatus;
+    });
+  }, [salesOrders, filterStatus, invoices, customers, warehouses, ewayBills]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3430,7 +3753,22 @@ function SalesPage({ salesOrders, inventory, customers, invoices, onGenerateIRN,
       </div>
 
       <Card className="shadow-sm border-gray-200">
-        <CardHeader><CardTitle>{tText("Sales Orders", language)}</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle>{tText("Sales Orders", language)}</CardTitle>
+          <div className="flex items-center gap-2">
+            <select
+              className="text-xs border border-slate-200 rounded-xl bg-white font-bold px-3 py-1 text-slate-600 cursor-pointer h-8"
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+            >
+              <option value="all">All Orders ({salesOrders.length})</option>
+              <option value="pending">Pending</option>
+              <option value="shipped">Shipped</option>
+              <option value="delivered">Delivered</option>
+              <option value="ewb_missing">⚠️ {language === 'ta' ? "தேவைப்படும் ஆனால் விடுபட்டவை" : "Required and missing (E-Way Bill)"}</option>
+            </select>
+          </div>
+        </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
@@ -3444,25 +3782,89 @@ function SalesPage({ salesOrders, inventory, customers, invoices, onGenerateIRN,
               </TableRow>
             </TableHeader>
             <TableBody>
-              {salesOrders.map(so => (
-                <TableRow key={so.id}>
-                  <TableCell className="font-bold">{so.id}</TableCell>
-                  <TableCell>{so.customerName}</TableCell>
-                  <TableCell>{so.date}</TableCell>
-                  <TableCell>₹{so.totalAmount.toLocaleString()}</TableCell>
-                  <TableCell><Badge className="bg-blue-100 text-blue-700 capitalize">{so.status}</Badge></TableCell>
-                  <TableCell className="text-right">
-                    <ViewInvoiceDialog 
-                      trigger={<Button variant="ghost" size="sm" className="text-indigo-600 font-bold"><FileText className="w-4 h-4 mr-1" /> {language === 'ta' ? "காண்க" : "View"}</Button>}
-                      invoice={invoices.find(inv => inv.orderId === so.id)}
-                      order={so}
-                      customer={customers.find(c => c.id === so.customerId)}
-                      inventory={inventory}
-                      onGenerateIRN={onGenerateIRN}
-                    />
+              {filteredSalesOrders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-slate-400 text-xs">
+                    No sales orders found matching selected filter.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredSalesOrders.map(so => {
+                  const inv = invoices.find(inv => inv.orderId === so.id);
+                  const cust = customers.find(c => c.id === so.customerId);
+                  const hasEwb = ewayBills?.some(b => (b.documentRefId === inv?.id || b.documentRefId === so.id) && b.status === 'ACT');
+                  const defaultWh = warehouses?.[0];
+                  const app = determineEwbApplicability({
+                    documentType: 'sales_invoice',
+                    fromStateCode: defaultWh?.stateCode || '27',
+                    toStateCode: cust?.stateCode || '27',
+                    fromGstin: defaultWh?.gstin,
+                    toGstin: cust?.gstin,
+                    consignmentValue: so.totalAmount
+                  });
+
+                  return (
+                    <TableRow key={so.id}>
+                      <TableCell className="font-bold">{so.id}</TableCell>
+                      <TableCell>{so.customerName}</TableCell>
+                      <TableCell>{so.date}</TableCell>
+                      <TableCell>₹{so.totalAmount.toLocaleString()}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Badge className="bg-blue-100 text-blue-700 capitalize">{so.status}</Badge>
+                          {hasEwb && (
+                            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[9px] font-bold">
+                              EWB Active
+                            </Badge>
+                          )}
+                          {!hasEwb && app.requirement === 'Required' && so.status === 'pending' && (
+                            <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[9px] font-bold animate-pulse">
+                              EWB Missing
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {so.status === 'pending' && (
+                            <Button 
+                              size="xs" 
+                              className="h-7 text-[10px] font-black bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center gap-1"
+                              onClick={() => {
+                                if (app.requirement === 'Required' && !hasEwb) {
+                                  alert(`⚠️ Statutory Dispatch Warning: Consignment value (₹${so.totalAmount.toLocaleString('en-IN')}) requires an active statutory E-Way Bill under Rule 138, but none has been generated. Marking order as Shipped...`);
+                                }
+                                if (onUpdateSOStatus) {
+                                  onUpdateSOStatus(so.id, 'shipped');
+                                }
+                              }}
+                            >
+                              <Truck size={10} /> {language === 'ta' ? "அனுப்பப்பட்டது" : "Mark Shipped"}
+                            </Button>
+                          )}
+
+                          <ViewInvoiceDialog 
+                            trigger={<Button variant="ghost" size="sm" className="text-indigo-600 font-bold"><FileText className="w-4 h-4 mr-1" /> {language === 'ta' ? "காண்க" : "View"}</Button>}
+                            invoice={inv}
+                            order={so}
+                            customer={cust}
+                            inventory={inventory}
+                            onGenerateIRN={onGenerateIRN}
+                            warehouses={warehouses}
+                            ewayBills={ewayBills}
+                            currentUser={currentUser}
+                            language={language}
+                            ewbSettings={ewbSettings}
+                            onGenerateEwb={onGenerateEwb}
+                            onUpdateEwbVehicle={onUpdateEwbVehicle}
+                            onCancelEwb={onCancelEwb}
+                          />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -4764,15 +5166,40 @@ function ScannerDialog({ inventory, onScan, trigger }: {
   );
 }
 
-function ViewInvoiceDialog({ invoice, order, customer, inventory, trigger, onGenerateIRN }: {
+function ViewInvoiceDialog({ 
+  invoice, 
+  order, 
+  customer, 
+  inventory, 
+  trigger, 
+  onGenerateIRN,
+  warehouses,
+  ewayBills = [],
+  currentUser,
+  language = 'en',
+  ewbSettings = DEFAULT_EWAY_BILL_SETTINGS,
+  onGenerateEwb,
+  onUpdateEwbVehicle,
+  onCancelEwb
+}: {
   invoice?: Invoice;
   order?: SalesOrder;
   customer?: Customer;
   inventory: InventoryItem[];
   trigger: React.ReactElement;
   onGenerateIRN?: (invoiceId: string) => void;
+  warehouses?: Warehouse[];
+  ewayBills?: EwayBill[];
+  currentUser?: Staff;
+  language?: Language;
+  ewbSettings?: EwayBillSettings;
+  onGenerateEwb?: (invoice: Invoice, order: SalesOrder, payload: any) => Promise<void>;
+  onUpdateEwbVehicle?: (ewbNo: string, payload: any) => Promise<void>;
+  onCancelEwb?: (ewbNo: string, payload: any) => Promise<void>;
 }) {
   if (!invoice || !order) return null;
+
+  const existingEwb = ewayBills.find(b => b.documentRefId === invoice.id || b.documentRefId === order.id);
 
   const taxableAmount = invoice.taxableAmount ?? order.items.reduce((sum, item) => sum + (item.quantity * item.rate), 0);
   const customerState = customer?.state || 'Maharashtra';
@@ -4971,6 +5398,46 @@ function ViewInvoiceDialog({ invoice, order, customer, inventory, trigger, onGen
               )}
             </div>
           </div>
+
+          {/* E-Way Bill Panel: available on Packed/Pending order invoice when not draft and not void, or if already generated */}
+          {invoice.status !== 'draft' && invoice.status !== 'void' && (order.status === 'pending' || existingEwb) && (
+            <EwayBillPanel 
+              documentRefId={invoice.id}
+              documentRefType="invoice"
+              documentNumber={invoice.id}
+              documentDate={invoice.date}
+              consignmentValue={invoice.totalAmount}
+              fromWarehouse={warehouses?.[0] || { id: 'wh-1', name: 'Main Warehouse', location: 'Mumbai', stateCode: '27', gstin: '27AAAAA0000A1Z5', pin: '400001' }}
+              toParty={{
+                gstin: customer?.gstin,
+                legalName: customer?.legalName || customer?.name,
+                tradeName: customer?.name,
+                addressLines: customer?.addressLines || [customer?.address || 'Mumbai'],
+                place: customer?.state || 'Mumbai',
+                stateCode: customer?.stateCode || '27',
+                pin: customer?.pin || '400050'
+              }}
+              items={order.items.map(it => {
+                const invItem = inventory.find(i => i.id === it.itemId);
+                return {
+                  productId: it.itemId,
+                  productName: invItem?.name || 'Goods',
+                  hsnCode: invItem?.hsnCode || '5208',
+                  quantity: it.quantity,
+                  unit: invItem?.unit || 'units',
+                  taxableAmount: it.quantity * it.rate,
+                  gstRate: invItem?.gstRate ?? 18
+                };
+              })}
+              existingEwb={existingEwb}
+              currentUser={currentUser || { id: 'usr-1', name: 'User', role: 'admin', email: 'user@company.com', permissions: {} as any }}
+              language={language}
+              settings={ewbSettings}
+              onGenerate={(payload) => onGenerateEwb ? onGenerateEwb(invoice, order, payload) : Promise.resolve()}
+              onUpdateVehicle={(ewbNo, payload) => onUpdateEwbVehicle ? onUpdateEwbVehicle(ewbNo, payload) : Promise.resolve()}
+              onCancel={(ewbNo, payload) => onCancelEwb ? onCancelEwb(ewbNo, payload) : Promise.resolve()}
+            />
+          )}
 
           <DialogFooter className="pt-4 border-t border-gray-100 sm:justify-between items-center">
             <p className="text-[10px] text-gray-400 italic">This is an IRP and GST-compliant computer generated invoice.</p>

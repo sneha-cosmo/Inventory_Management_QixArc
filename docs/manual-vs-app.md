@@ -60,3 +60,8 @@ This document provides a comprehensive reconciliation of all discrepancies ident
 ### Part J: Role-Based Access Control & Audit Trails
 - **Manual Spec:** Admin, Inventory Manager, Billing Clerk roles with immutable 6-field audit logging (`timestamp`, `user`, `role`, `action`, `description`, `itemReference`).
 - **Implementation:** `src/rules/permissions.ts` and `src/rules/audit.ts` construct and enforce strict 6-field audit records on every critical state modification.
+
+### Part G.4 / Part H: Sales Order Fulfillment Lifecycle & E-Way Bill Dispatch
+- **Manual Spec (Section G.4):** Multi-stage order fulfillment with explicit intermediate stages: Confirmed $\rightarrow$ Packed $\rightarrow$ Delivered, with E-Way Bill generation strictly triggered on Packed sales invoices.
+- **Code Reality & Decision:** Preserves established lightweight 4-state lifecycle (`pending` $\rightarrow$ `shipped` $\rightarrow$ `delivered` $\rightarrow$ `cancelled`) without adding intermediate `confirmed` or `packed` statuses. Marking an order as `shipped` serves as the physical dispatch event.
+- **E-Way Bill Generation Integration:** E-Way Bill generation panel is available on the sales order's non-draft, non-void invoice while the order remains `pending`. When marking the order as `shipped`, the system checks E-Way Bill applicability and presents a non-blocking statutory warning if a required E-Way Bill has not yet been generated.
