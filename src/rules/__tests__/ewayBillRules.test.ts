@@ -79,7 +79,7 @@ describe('E-Way Bill Pure Rules & Applicability', () => {
         consignmentValue: 49999,
         settings: DEFAULT_EWAY_BILL_SETTINGS
       });
-      expect(res.requirement).toBe('Optional');
+      expect(res.requirement).toBe('Not required');
       expect(res.applicableThreshold).toBe(50000);
       expect(res.isInterState).toBe(true);
       expect(res.reason).toContain('does not exceed statutory threshold');

@@ -90,8 +90,8 @@ export function determineEwbApplicability(input: EwbApplicabilityInput): EwbAppl
       };
     } else {
       return {
-        requirement: 'Optional',
-        reason: `Inter-state consignment value (₹${input.consignmentValue.toLocaleString('en-IN')}) does not exceed statutory threshold of ₹${applicableThreshold.toLocaleString('en-IN')}. Voluntary generation is permitted.`,
+        requirement: 'Not required',
+        reason: `Inter-state consignment value (₹${input.consignmentValue.toLocaleString('en-IN')}) does not exceed statutory threshold of ₹${applicableThreshold.toLocaleString('en-IN')}. Statutory generation is not required; voluntary generation is permitted.`,
         applicableThreshold,
         isInterState: true,
         isSameGstin,

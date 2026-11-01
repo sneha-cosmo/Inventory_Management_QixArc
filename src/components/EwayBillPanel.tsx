@@ -182,7 +182,7 @@ export default function EwayBillPanel({
     }
   } else if (applicability.requirement === 'Required') {
     status = readiness.ready ? 'Ready' : 'Required';
-  } else if (applicability.requirement === 'Optional') {
+  } else {
     status = readiness.ready ? 'Ready' : 'Not required';
   }
 
