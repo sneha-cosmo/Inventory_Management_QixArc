@@ -307,7 +307,8 @@ export class GspProviderSkeleton implements EwayBillProvider {
  * Defaults to MockEwayBillProvider.
  */
 export function createEwayBillProvider(envProvider?: string): EwayBillProvider {
-  const providerType = (envProvider || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GST_PROVIDER) || 'mock').toLowerCase();
+  const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : undefined;
+  const providerType = (envProvider || metaEnv?.VITE_GST_PROVIDER || 'mock').toLowerCase();
 
   if (providerType === 'live') {
     return new GspProviderSkeleton(false);

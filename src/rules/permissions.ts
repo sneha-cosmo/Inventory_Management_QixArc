@@ -20,6 +20,8 @@ export type PermissionKey =
   | 'transferStock'
   | 'syncBranches'
   | 'generateInvoices'
+  | 'generateEwayBill'
+  | 'cancelEwayBill'
   | 'configureSettings';
 
 export const ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
@@ -30,6 +32,8 @@ export const ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
     'receivePO',
     'createSO',
     'generateInvoices',
+    'generateEwayBill',
+    'cancelEwayBill',
     'recordPayment',
     'manageStaff',
     'manageStaffRoles',
@@ -46,6 +50,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
     'makeAdjustments',
     'createPO',
     'receivePO',
+    'generateEwayBill',
     'viewFinancials',
     'manageBatches',
     'recallBatch',
@@ -57,6 +62,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, PermissionKey[]> = {
   billing_clerk: [
     'createSO',
     'generateInvoices',
+    'generateEwayBill',
     'recordPayment',
     'viewFinancials'
   ],

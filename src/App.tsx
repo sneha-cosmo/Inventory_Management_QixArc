@@ -95,6 +95,7 @@ import {
   BranchSyncStatus,
   StockLevel,
   EwayBill,
+  EwayBillSettings,
   DeliveryChallan
 } from './types';
 import { 
@@ -1802,6 +1803,17 @@ export default function App() {
                 inventory={inventory}
                 customers={customers}
                 invoices={invoices}
+                warehouses={warehouses}
+                ewayBills={ewayBills}
+                currentUser={currentUser}
+                onGenerateEwb={handleGenerateEwbForInvoice}
+                onUpdateEwbVehicle={handleUpdateEwbVehicle}
+                onCancelEwb={handleCancelEwb}
+                ewbSettings={ewbSettings}
+                onUpdateSOStatus={(soId, status) => {
+                  setSalesOrders(prev => prev.map(so => so.id === soId ? { ...so, status } : so));
+                  addAuditLog('Sales Order Dispatched', 'SalesOrder', soId, `Order ${soId} status updated to ${status}.`);
+                }}
                 onGenerateIRN={handleGenerateIRN}
                 language={language}
                 onAddSO={(so) => {
@@ -2172,6 +2184,12 @@ export default function App() {
                   addAuditLog('Global Branch Sync', 'Warehouse', 'ALL', 'Dispatched multi-branch sync requests to regional cloud buffers; all hubs report 100% database parity.');
                 }}
                 checkPermission={(perm) => checkPermission(perm as any)}
+                ewayBills={ewayBills}
+                currentUser={currentUser}
+                language={language}
+                onGenerateEwb={handleGenerateEwbForTransfer}
+                onUpdateEwbVehicle={handleUpdateEwbVehicle}
+                onCancelEwb={handleCancelEwb}
               />
             )}
 
