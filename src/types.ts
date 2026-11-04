@@ -8,6 +8,7 @@ export interface Warehouse {
   stateCode?: string; // E.g. '27' for Maharashtra
   state?: string;
   pin?: string;
+  isIncomplete?: boolean;
 }
 
 export interface Supplier {

@@ -158,7 +158,7 @@ import {
 } from './rules/stock';
 import { classifyExpiry } from './rules/expiry';
 import { calculateCostVariance, formatCurrency } from './rules/valuation';
-import { calculateGst } from './rules/tax';
+import { calculateGst, TaxSettings, DEFAULT_TAX_SETTINGS } from './rules/tax';
 import { computeInvoiceStatus, validateInvoiceNumber } from './rules/invoice';
 import { hasPermission } from './rules/permissions';
 import { createAuditEvent } from './rules/audit';
@@ -372,6 +372,7 @@ export default function App() {
   // E-Way Bill statutory records & provider instance
   const [ewayBills, setEwayBills] = useState<EwayBill[]>(INITIAL_EWAY_BILLS);
   const [ewbSettings, setEwbSettings] = useState<EwayBillSettings>(DEFAULT_EWAY_BILL_SETTINGS);
+  const [taxSettings, setTaxSettings] = useState<TaxSettings>(DEFAULT_TAX_SETTINGS);
   const ewayBillProvider = useMemo(() => createEwayBillProvider(), []);
   
   // URL Route detection for /self-test
@@ -985,7 +986,8 @@ export default function App() {
       const createdWhs: Warehouse[] = newWarehouses.map(whName => ({
         id: `wh-${whName.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
         name: whName,
-        location: 'Auto-created Depot'
+        location: 'Auto-created Depot',
+        isIncomplete: true
       }));
       setWarehouses(prev => {
         const existingIds = new Set(prev.map(w => w.id));
@@ -1616,6 +1618,7 @@ export default function App() {
                 onDeleteItem={handleDeleteItem}
                 language={language}
                 developerToolsEnabled={!!notificationSettings.developerToolsEnabled && currentUser.role === 'admin'}
+                taxSettings={taxSettings}
               />
             )}
 
@@ -1626,6 +1629,10 @@ export default function App() {
                 onAddWarehouse={(w) => {
                   setWarehouses([...warehouses, w]);
                   addAuditLog('Add Warehouse', 'Warehouse', w.id, `Warehouse ${w.name} created at ${w.location}`);
+                }}
+                onUpdateWarehouse={(updated) => {
+                  setWarehouses(prev => prev.map(w => w.id === updated.id ? updated : w));
+                  addAuditLog('Update Warehouse', 'Warehouse', updated.id, `Updated details for warehouse ${updated.name}`);
                 }}
                 language={language}
               />
@@ -2387,7 +2394,8 @@ function InventoryMgmtPage({
   onBulkImport,
   onDeleteItem, 
   language = 'en',
-  developerToolsEnabled = false
+  developerToolsEnabled = false,
+  taxSettings
 }: { 
   inventory: InventoryItem[], 
   categories: Category[],
@@ -2400,7 +2408,8 @@ function InventoryMgmtPage({
   onBulkImport: (payload: any) => void,
   onDeleteItem: (id: string) => void,
   language?: Language,
-  developerToolsEnabled?: boolean
+  developerToolsEnabled?: boolean,
+  taxSettings?: TaxSettings
 }) {
   const [importOpen, setImportOpen] = useState(false);
   const canImport = currentUser.role === 'admin' || currentUser.role === 'inventory_manager';
@@ -2456,6 +2465,7 @@ function InventoryMgmtPage({
             currentUser={currentUser}
             language={language}
             developerToolsEnabled={developerToolsEnabled}
+            taxSettings={taxSettings}
             onImportComplete={onBulkImport}
           />
         </div>
@@ -2539,15 +2549,25 @@ function InventoryMgmtPage({
 
 // --- New Sub-Pages ---
 
-function WarehousePage({ warehouses, inventory, onAddWarehouse, language = 'en' }: { 
+function WarehousePage({ warehouses, inventory, onAddWarehouse, onUpdateWarehouse, language = 'en' }: { 
   warehouses: Warehouse[], 
   inventory: InventoryItem[],
   onAddWarehouse: (w: Warehouse) => void,
+  onUpdateWarehouse?: (w: Warehouse) => void,
   language?: Language
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
+
+  // Complete details modal state
+  const [editingWh, setEditingWh] = useState<Warehouse | null>(null);
+  const [legalName, setLegalName] = useState('');
+  const [gstin, setGstin] = useState('');
+  const [address, setAddress] = useState('');
+  const [stateCode, setStateCode] = useState('');
+  const [stateName, setStateName] = useState('');
+  const [pin, setPin] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2555,6 +2575,47 @@ function WarehousePage({ warehouses, inventory, onAddWarehouse, language = 'en' 
     setOpen(false);
     setName('');
     setLocation('');
+  };
+
+  const handleOpenEdit = (wh: Warehouse) => {
+    setEditingWh(wh);
+    setLegalName(wh.legalName || wh.name || '');
+    setGstin(wh.gstin || '');
+    setAddress(wh.addressLines?.join(', ') || wh.location || '');
+    setStateCode(wh.stateCode || '');
+    setStateName(wh.state || '');
+    setPin(wh.pin || '');
+  };
+
+  const handleSaveDetails = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingWh) return;
+
+    const addressLines = address.split('\n').map(l => l.trim()).filter(Boolean);
+    if (addressLines.length === 0 && address.trim()) {
+      addressLines.push(address.trim());
+    }
+
+    const isComplete = Boolean(
+      gstin.trim() &&
+      addressLines.length > 0 &&
+      stateCode.trim() &&
+      pin.trim()
+    );
+
+    const updated: Warehouse = {
+      ...editingWh,
+      legalName: legalName.trim() || editingWh.name,
+      gstin: gstin.trim().toUpperCase(),
+      addressLines,
+      stateCode: stateCode.trim(),
+      state: stateName.trim() || undefined,
+      pin: pin.trim(),
+      isIncomplete: !isComplete
+    };
+
+    onUpdateWarehouse?.(updated);
+    setEditingWh(null);
   };
 
   return (
@@ -2578,31 +2639,177 @@ function WarehousePage({ warehouses, inventory, onAddWarehouse, language = 'en' 
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {warehouses.map(wh => (
-          <Card key={wh.id} className="shadow-sm border-gray-200">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>{wh.name}</CardTitle>
-                <CardDescription>{wh.location}</CardDescription>
-              </div>
-              <Store className="text-indigo-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <p className="text-sm font-bold text-gray-500 uppercase tracking-wider">{language === 'ta' ? "விரைவான புள்ளிவிவரங்கள்" : "Quick Stats"}</p>
-                <div className="flex justify-between text-sm">
-                  <span>{language === 'ta' ? "மொத்த பொருட்கள்:" : "Total Items:"}</span>
-                  <span className="font-bold">{inventory.length}</span>
+        {warehouses.map(wh => {
+          const isIncomplete = wh.isIncomplete || (!wh.gstin || !wh.addressLines || wh.addressLines.length === 0 || !wh.stateCode || !wh.pin);
+          return (
+            <Card key={wh.id} className={`shadow-sm ${isIncomplete ? 'border-amber-300 bg-amber-50/10' : 'border-gray-200'}`}>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <CardTitle>{wh.name}</CardTitle>
+                    {isIncomplete && (
+                      <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold">
+                        {language === 'ta' ? "முழுமையற்றது" : "Incomplete"}
+                      </Badge>
+                    )}
+                  </div>
+                  <CardDescription>{wh.location}</CardDescription>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span>{language === 'ta' ? "திறன் நிலை:" : "Capacity:"}</span>
-                  <span className="text-green-600 font-bold">{language === 'ta' ? "உகந்தது" : "Optimal"}</span>
+                <Store className="text-indigo-600" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Incomplete Warning Banner */}
+                {isIncomplete && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-amber-900">
+                          {language === 'ta' ? "முழுமையற்ற கிடங்கு" : "Incomplete Warehouse"}
+                        </p>
+                        <p className="text-[11px] text-amber-700 leading-tight mt-0.5">
+                          {language === 'ta' 
+                            ? "GSTIN, முகவரி, மாநிலக் குறியீடு அல்லது அஞ்சல் குறியீடு இல்லை. இ-வே பில் உருவாக்க விவரங்களை முடிக்கவும்."
+                            : "Missing GSTIN, address, state code, or PIN. Complete details to enable statutory compliance and e-way bill generation."}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs h-7 border-amber-300 text-amber-800 hover:bg-amber-100 font-bold shrink-0 self-start sm:self-auto"
+                      onClick={() => handleOpenEdit(wh)}
+                    >
+                      {language === 'ta' ? "விவரங்களை முடிக்க" : "Complete Details"}
+                    </Button>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <p className="text-sm font-bold text-gray-500 uppercase tracking-wider">{language === 'ta' ? "விரைவான புள்ளிவிவரங்கள்" : "Quick Stats"}</p>
+                  <div className="flex justify-between text-sm">
+                    <span>{language === 'ta' ? "மொத்த பொருட்கள்:" : "Total Items:"}</span>
+                    <span className="font-bold">{inventory.length}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>{language === 'ta' ? "திறன் நிலை:" : "Capacity:"}</span>
+                    <span className="text-green-600 font-bold">{language === 'ta' ? "உகந்தது" : "Optimal"}</span>
+                  </div>
+                  {wh.gstin && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">GSTIN:</span>
+                      <span className="font-mono text-xs font-bold text-indigo-900">{wh.gstin}</span>
+                    </div>
+                  )}
+                  {wh.stateCode && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">State Code:</span>
+                      <span className="font-bold text-slate-700">{wh.stateCode} {wh.state ? `(${wh.state})` : ''}</span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
+
+      {/* Complete Details Modal */}
+      {editingWh && (
+        <Dialog open={Boolean(editingWh)} onOpenChange={(isOpen) => !isOpen && setEditingWh(null)}>
+          <DialogContent className="sm:max-w-[480px]">
+            <form onSubmit={handleSaveDetails}>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Store className="text-indigo-600 w-5 h-5" />
+                  {language === 'ta' ? "கிடங்கு விவரங்களை முடிக்கவும்" : "Complete Warehouse Details"}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  {language === 'ta' 
+                    ? "சட்டபூர்வ GST மற்றும் இ-வே பில் தகவல்களை பூர்த்தி செய்யவும்." 
+                    : "Enter GSTIN, structured address, state code and PIN to complete this warehouse."}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3 py-3 text-xs">
+                <div className="space-y-1">
+                  <Label className="text-xs">Legal / Trade Name *</Label>
+                  <Input 
+                    value={legalName} 
+                    onChange={e => setLegalName(e.target.value)} 
+                    placeholder="e.g. InvPredict Textiles Ltd - Central Depot" 
+                    required 
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">GSTIN (15 characters) *</Label>
+                  <Input 
+                    value={gstin} 
+                    onChange={e => setGstin(e.target.value.toUpperCase())} 
+                    placeholder="e.g. 27AAAAA0000A1Z5" 
+                    maxLength={15} 
+                    required 
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Address Lines *</Label>
+                  <Input 
+                    value={address} 
+                    onChange={e => setAddress(e.target.value)} 
+                    placeholder="e.g. Plot 42, Industrial Area, Andheri East" 
+                    required 
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">State Code (2 digits) *</Label>
+                    <Input 
+                      value={stateCode} 
+                      onChange={e => setStateCode(e.target.value)} 
+                      placeholder="e.g. 27" 
+                      maxLength={2} 
+                      required 
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">State Name</Label>
+                    <Input 
+                      value={stateName} 
+                      onChange={e => setStateName(e.target.value)} 
+                      placeholder="Maharashtra" 
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">PIN Code (6 digits) *</Label>
+                    <Input 
+                      value={pin} 
+                      onChange={e => setPin(e.target.value)} 
+                      placeholder="400093" 
+                      maxLength={6} 
+                      required 
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="mt-2">
+                <Button type="button" variant="outline" size="sm" onClick={() => setEditingWh(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold">
+                  Save & Complete Warehouse
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

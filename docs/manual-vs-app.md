@@ -65,3 +65,60 @@ This document provides a comprehensive reconciliation of all discrepancies ident
 - **Manual Spec (Section G.4):** Multi-stage order fulfillment with explicit intermediate stages: Confirmed $\rightarrow$ Packed $\rightarrow$ Delivered, with E-Way Bill generation strictly triggered on Packed sales invoices.
 - **Code Reality & Decision:** Preserves established lightweight 4-state lifecycle (`pending` $\rightarrow$ `shipped` $\rightarrow$ `delivered` $\rightarrow$ `cancelled`) without adding intermediate `confirmed` or `packed` statuses. Marking an order as `shipped` serves as the physical dispatch event.
 - **E-Way Bill Generation Integration:** E-Way Bill generation panel is available on the sales order's non-draft, non-void invoice while the order remains `pending`. When marking the order as `shipped`, the system checks E-Way Bill applicability and presents a non-blocking statutory warning if a required E-Way Bill has not yet been generated.
+
+---
+
+## 3. Inventory Bulk Import & Master Data Hardening
+
+### Background & Gap Analysis
+Prior to hardening, the CSV bulk import template contained sample barcodes (`8901234567897`, `8909876543217`) with invalid EAN-13 check digits, failing its own validator on fresh download. Furthermore, statutory GST fields (HSN/SAC, GST Rate, UQC) were absent from the template and column mapper, leading to default assumptions, and auto-created warehouses lacked mandatory statutory tax identifiers (GSTIN, address, state code, PIN).
+
+### Reconciled & Hardened Implementation
+1. **Downloadable Template Parity:**
+   - Sample barcodes replaced with mathematically valid EAN-13 barcodes (`8901234567890` and `8909876543210`), both calculating check digit 0.
+   - Verified by test suite: importing the generated template unchanged against standard categories and warehouses yields 0 errors and 0 warnings.
+2. **Statutory Tax & Unit Mapping:**
+   - Added `HSN/SAC`, `GST Rate (%)`, and `UQC` columns to `generateCsvTemplate()`, `TARGET_FIELDS` (with aliases), and row validation.
+   - HSN validation dynamically enforces turnover thresholds based on company tax settings: minimum 4 digits for $\le \text{₹}5\text{ Cr}$, minimum 6 digits for $> \text{₹}5\text{ Cr}$.
+   - GST Rate must be numeric and non-negative; non-standard rates trigger informative warnings without blocking valid entries.
+   - Units are mapped to statutory GST Unit Quantity Codes (`meters` $\rightarrow$ `MTR`, `pcs` $\rightarrow$ `PCS`, `kg` $\rightarrow$ `KGS`, etc.), warning if an unrecognized unit cannot be mapped.
+3. **Barcode Check Digit Repair & Non-EAN Formats:**
+   - For 13-digit codes declared as EAN-13, a check digit mismatch produces an Error, computes the mathematically correct check digit via `suggestEan13CheckDigit()`, and renders a "Use suggested" one-click button in the review table.
+   - Non-13 digit barcodes (e.g. Code-128, UPC-12, or internal alphanumeric formats) emit a non-blocking Warning rather than an Error.
+   - In the review table, the Issues/Notes column wraps without truncation, displaying full error and warning diagnostics.
+4. **Incomplete Warehouse Governance:**
+   - When "Create missing categories & warehouses automatically" adds a new warehouse, it is marked `isIncomplete: true`.
+   - The review table shows an explicit warning: `New Warehouse '<name>' will be created as incomplete (no GSTIN, address, state code or PIN)`.
+   - On `WarehousePage`, incomplete warehouses display an amber alert banner and an interactive "Complete Details" modal, clearing `isIncomplete` once GSTIN, address, state code, and PIN are saved.
+
+---
+
+## 4. Downloadable Blank Template & Dynamic Sample File Generator
+
+### Background & Architecture Isolation
+To maintain strict architectural purity, sample file generation logic is isolated entirely within the import feature module (`src/features/import/sampleFile.ts`). No random services or sample data logic are introduced into the domain rules layer (`src/rules`), stock calculations, orders, invoices, reports, or audit logs.
+
+### Reconciled & Hardened Implementation
+1. **Dual Modal Action Buttons:**
+   - **Download blank template:** Produces a header-row-only CSV (`inventory_blank_template.csv`) with zero data rows that is always identical. Verified by tests to parse 0 rows with 0 errors and 0 warnings.
+   - **Generate sample file:** Generates a randomized sample file (`inventory_sample_<date-time from Clock>.csv`) picking 3 to 8 distinct products.
+2. **Fixed 30-Item Realistic Product Pool:**
+   - Maintained within `src/features/import/sampleFile.ts`, containing 30 industry-accurate textile products across 5 domains (6 Fabrics, 6 Trims, 6 Packaging, 6 Thread, 6 Finished Goods).
+   - Every product has a fixed SKU, name, unit, statutory 6-digit HSN, standard GST rate (5%, 12%, 18%), mapped UQC, and a valid 13-digit EAN-13 barcode with a mathematically computed check digit.
+3. **Sensible Variations & Mathematical Constraints:**
+   - An injectable pick function (`rng: PickRng`, defaulting to `Math.random`) selects 3 to 8 distinct products without repetition in a single file.
+   - Prices and stock quantities receive small variations ($\pm 10\%$) while strictly adhering to core inventory invariants:
+     - `unitCost < sellingPrice`
+     - `minStock < currentStock`
+     - `safetyStock < currentStock`
+     - All values are positive and non-negative.
+   - Products can overlap across different generated files, but no file ever contains a duplicate SKU.
+4. **Validation Parity & Zero Errors/Warnings:**
+   - Tested across 200 consecutive randomized generated files: all import into an empty store with 0 errors and 0 warnings.
+   - Barcodes adhere to EAN-13 check digit rules.
+   - HSN codes dynamically format to the active aggregate-turnover threshold (4 digits for $\le \text{₹}5\text{ Cr}$, 6 digits for $> \text{₹}5\text{ Cr}$).
+   - Units map directly to valid statutory UQC codes (`MTR`, `PCS`, `ROL`, `BOX`, `CON`, `PAC`).
+   - Warehouses match existing warehouses from the store.
+5. **Duplicate SKU Notice Display:**
+   - Under the default `skip` duplicate policy, importing an item whose SKU already exists in inventory is treated as a notice rather than an error (`isValid: true`), displaying `Skipped - SKU already exists` in the review table's Issues column and rendering an explicit `Skipped` badge.
+

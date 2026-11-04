@@ -59,8 +59,15 @@ import {
   generateErrorsCsv,
   processImportInChunks
 } from '../utils/bulkImport';
+import { 
+  generateBlankTemplateCsv, 
+  generateSampleFile, 
+  getSampleFileName 
+} from '../features/import/sampleFile';
+import { Clock } from '../rules/clock';
 import { InventoryItem, Category, Warehouse, Staff } from '../types';
 import { Language, LOCALES, tText } from '../locales';
+import { TaxSettings } from '../rules/tax';
 
 interface BulkImportModalProps {
   open: boolean;
@@ -71,6 +78,7 @@ interface BulkImportModalProps {
   currentUser: Staff;
   language?: Language;
   developerToolsEnabled?: boolean;
+  taxSettings?: TaxSettings;
   onImportComplete: (payload: {
     itemsToCreate: InventoryItem[];
     itemsToUpdate: InventoryItem[];
@@ -97,6 +105,7 @@ export default function BulkImportModal({
   currentUser,
   language = 'en',
   developerToolsEnabled = false,
+  taxSettings,
   onImportComplete
 }: BulkImportModalProps) {
   const t = LOCALES[language];
@@ -269,27 +278,32 @@ export default function BulkImportModal({
     }
   };
 
-  // Download template CSV
-  const handleDownloadTemplate = () => {
-    const csv = generateCsvTemplate();
+  // Download blank template (header row only, always identical)
+  const handleDownloadBlankTemplate = () => {
+    const csv = generateBlankTemplateCsv();
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', 'inventory_import_template.csv');
+    link.setAttribute('download', 'inventory_blank_template.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Download sample CSV with deliberate errors for testing
-  const handleDownloadSampleErrors = () => {
-    const csv = generateSampleErrorsCsv();
+  // Generate sample file (picks 3 to 8 distinct products from realistic pool with date-time in filename)
+  const handleGenerateSampleFile = () => {
+    const csv = generateSampleFile({
+      warehouses,
+      categories,
+      taxSettings
+    });
+    const fileName = getSampleFileName(Clock);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', 'inventory_sample_errors.csv');
+    link.setAttribute('download', fileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -309,9 +323,23 @@ export default function BulkImportModal({
       existingCategories: categories,
       existingWarehouses: warehouses,
       createMissingCategoriesWarehouses: createMissing,
-      duplicatePolicy
+      duplicatePolicy,
+      taxSettings
     });
-  }, [rawRows, columnMapping, inventory, categories, warehouses, createMissing, duplicatePolicy]);
+  }, [rawRows, columnMapping, inventory, categories, warehouses, createMissing, duplicatePolicy, taxSettings]);
+
+  // Apply suggested barcode fix
+  const handleApplySuggestedBarcode = (rowNumber: number, suggested: string) => {
+    const index = rawRows.findIndex((_, i) => i + 2 === rowNumber);
+    if (index !== -1) {
+      const newRawRows = [...rawRows];
+      const targetRaw = { ...newRawRows[index] };
+      const barcodeCol = columnMapping.barcode || 'Barcode';
+      targetRaw[barcodeCol] = suggested;
+      newRawRows[index] = targetRaw;
+      setRawRows(newRawRows);
+    }
+  };
 
   // Counts
   const validCount = useMemo(() => validatedRows.filter(r => r.isValid).length, [validatedRows]);
@@ -367,6 +395,9 @@ export default function BulkImportModal({
       if (columnMapping.barcode) targetRaw[columnMapping.barcode] = updatedRow.data.barcode;
       if (columnMapping.category) targetRaw[columnMapping.category] = updatedRow.data.category;
       if (columnMapping.unit) targetRaw[columnMapping.unit] = updatedRow.data.unit;
+      if (columnMapping.hsnCode && updatedRow.data.hsnCode !== undefined) targetRaw[columnMapping.hsnCode] = updatedRow.data.hsnCode;
+      if (columnMapping.gstRate && updatedRow.data.gstRate !== undefined) targetRaw[columnMapping.gstRate] = updatedRow.data.gstRate.toString();
+      if (columnMapping.uqc && updatedRow.data.uqc !== undefined) targetRaw[columnMapping.uqc] = updatedRow.data.uqc;
       if (columnMapping.currentStock) targetRaw[columnMapping.currentStock] = updatedRow.data.currentStock.toString();
       if (columnMapping.minStock) targetRaw[columnMapping.minStock] = updatedRow.data.minStock.toString();
       if (columnMapping.safetyStock) targetRaw[columnMapping.safetyStock] = updatedRow.data.safetyStock.toString();
@@ -448,6 +479,9 @@ export default function BulkImportModal({
                 name: row.data.name,
                 barcode: row.data.barcode || existingItem.barcode,
                 unit: row.data.unit,
+                uqc: row.data.uqc !== undefined ? row.data.uqc : existingItem.uqc,
+                hsnCode: row.data.hsnCode !== undefined ? row.data.hsnCode : existingItem.hsnCode,
+                gstRate: row.data.gstRate !== undefined ? row.data.gstRate : existingItem.gstRate,
                 currentStock: row.data.currentStock,
                 minStock: row.data.minStock,
                 safetyStock: row.data.safetyStock,
@@ -486,14 +520,15 @@ export default function BulkImportModal({
             barcode: row.data.barcode,
             categoryId: catId,
             unit: row.data.unit,
+            uqc: row.data.uqc,
             currentStock: row.data.currentStock,
             minStock: row.data.minStock,
             safetyStock: row.data.safetyStock,
             dailyConsumption: row.data.dailyConsumption,
             leadTime: row.data.leadTime,
             description: row.data.description,
-            hsnCode: '9987',
-            gstRate: 18
+            hsnCode: row.data.hsnCode || '9987',
+            gstRate: row.data.gstRate !== undefined ? row.data.gstRate : 18
           };
 
           itemsToCreate.push(newItem);
@@ -651,7 +686,7 @@ export default function BulkImportModal({
                   </Button>
                 </div>
 
-                {/* Download Template & Quick Info */}
+                {/* Download Blank Template & Generate Sample File */}
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
                   <div className="flex items-center gap-3">
                     <div className="p-2 bg-white rounded-lg border border-slate-200 shadow-2xs">
@@ -659,10 +694,10 @@ export default function BulkImportModal({
                     </div>
                     <div>
                       <p className="text-xs font-bold text-slate-800">
-                        {language === 'ta' ? "மாதிரி CSV கோப்பை பதிவிறக்குங்கள்" : "Need the standard import format?"}
+                        {language === 'ta' ? "இறக்குமதி வார்ப்புருக்கள்" : "Import Templates"}
                       </p>
                       <p className="text-[11px] text-slate-500">
-                        {language === 'ta' ? "அனைத்து நெடுவரிசைகள் மற்றும் உதாரண தரவுகளுடன் கூடிய வார்ப்புரு." : "Includes all inventory fields with 2 realistic pre-filled example items."}
+                        {language === 'ta' ? "வெற்று தலைப்பு வார்ப்புருவை பதிவிறக்குங்கள் அல்லது மாதிரி கோப்பை உருவாக்குங்கள்." : "Download a blank header-only template or generate a realistic pre-filled sample file."}
                       </p>
                     </div>
                   </div>
@@ -670,21 +705,21 @@ export default function BulkImportModal({
                     <Button 
                       type="button" 
                       variant="outline" 
-                      onClick={handleDownloadTemplate}
-                      className="rounded-xl border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold shrink-0"
+                      onClick={handleDownloadBlankTemplate}
+                      className="rounded-xl border-indigo-300 text-indigo-700 hover:bg-indigo-50 font-bold shrink-0 text-xs shadow-2xs"
                     >
-                      <Download className="mr-1.5 h-3.5 w-3.5" />
-                      {t.downloadTemplate}
+                      <Download className="mr-1.5 h-3.5 w-3.5 text-indigo-600" />
+                      Download blank template
                     </Button>
 
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={handleDownloadSampleErrors}
-                      className="rounded-xl border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 font-bold shrink-0 text-xs shadow-2xs"
+                      onClick={handleGenerateSampleFile}
+                      className="rounded-xl border-indigo-300 text-indigo-700 bg-indigo-50/50 hover:bg-indigo-100 font-bold shrink-0 text-xs shadow-2xs"
                     >
-                      <Download className="mr-1.5 h-3.5 w-3.5 text-amber-600" />
-                      Download sample file with errors
+                      <RefreshCw className="mr-1.5 h-3.5 w-3.5 text-indigo-600" />
+                      Generate sample file
                     </Button>
                   </div>
                 </div>
@@ -943,7 +978,11 @@ export default function BulkImportModal({
                               {row.rowNumber}
                             </TableCell>
                             <TableCell>
-                              {!row.isValid ? (
+                              {row.isDuplicateInExisting && duplicatePolicy === 'skip' ? (
+                                <Badge className="bg-slate-500 hover:bg-slate-600 text-white text-[10px] py-0">
+                                  Skipped
+                                </Badge>
+                              ) : !row.isValid ? (
                                 <Badge variant="destructive" className="text-[10px] py-0">
                                   Error
                                 </Badge>
@@ -972,19 +1011,35 @@ export default function BulkImportModal({
                             <TableCell className="text-xs font-bold">
                               {row.data.currentStock} {row.data.unit}
                             </TableCell>
-                            <TableCell className="text-[11px] max-w-[220px]">
-                              {row.errors.length > 0 && (
-                                <p className="text-red-600 font-medium truncate" title={row.errors.join('; ')}>
-                                  {row.errors[0]}
+                            <TableCell className="text-xs max-w-[280px] whitespace-normal break-words py-2 space-y-1">
+                              {row.errors.map((err, i) => (
+                                <p key={`err-${i}`} className="text-red-600 font-medium leading-tight">
+                                  • {err}
                                 </p>
-                              )}
-                              {row.warnings.length > 0 && row.errors.length === 0 && (
-                                <p className="text-amber-700 font-medium truncate" title={row.warnings.join('; ')}>
-                                  {row.warnings[0]}
+                              ))}
+                              {row.warnings.map((warn, i) => (
+                                <p key={`warn-${i}`} className="text-amber-700 font-medium leading-tight">
+                                  • {warn}
                                 </p>
+                              ))}
+                              {row.data.suggestedBarcode && (
+                                <div className="mt-1 pt-1 flex items-center gap-1.5 flex-wrap border-t border-slate-100">
+                                  <span className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded text-slate-700 font-semibold">
+                                    Suggested: {row.data.suggestedBarcode}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="xs"
+                                    className="h-5 text-[10px] px-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50 font-bold"
+                                    onClick={() => handleApplySuggestedBarcode(row.rowNumber, row.data.suggestedBarcode!)}
+                                  >
+                                    Use suggested
+                                  </Button>
+                                </div>
                               )}
                               {row.errors.length === 0 && row.warnings.length === 0 && (
-                                <span className="text-green-600 text-xs">Ready</span>
+                                <span className="text-green-600 text-xs font-semibold">Ready</span>
                               )}
                             </TableCell>
                             <TableCell className="text-right">
@@ -1248,6 +1303,43 @@ export default function BulkImportModal({
                     onChange={(e) => setEditingRow({
                       ...editingRow,
                       data: { ...editingRow.data, barcode: e.target.value }
+                    })}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">HSN/SAC</Label>
+                  <Input 
+                    value={editingRow.data.hsnCode || ''} 
+                    onChange={(e) => setEditingRow({
+                      ...editingRow,
+                      data: { ...editingRow.data, hsnCode: e.target.value }
+                    })}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">GST Rate (%)</Label>
+                  <Input 
+                    type="number"
+                    value={editingRow.data.gstRate !== undefined ? editingRow.data.gstRate : ''} 
+                    onChange={(e) => setEditingRow({
+                      ...editingRow,
+                      data: { ...editingRow.data, gstRate: e.target.value !== '' ? Number(e.target.value) : undefined }
+                    })}
+                    className="h-8 text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">UQC</Label>
+                  <Input 
+                    value={editingRow.data.uqc || ''} 
+                    onChange={(e) => setEditingRow({
+                      ...editingRow,
+                      data: { ...editingRow.data, uqc: e.target.value.toUpperCase() }
                     })}
                     className="h-8 text-xs font-mono"
                   />

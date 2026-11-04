@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan for hardening inventory bulk import: template zero-error sample rows, statutory columns (HSN/SAC, GST Rate, UQC) with aggregate turnover rules, incomplete auto-created warehouse tracking and banners, and review table UI upgrades with suggested EAN-13 barcode check digit repair.",
+  "updatedAt": "2026-11-04T04:18:59.217709739Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

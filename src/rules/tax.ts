@@ -134,3 +134,92 @@ export function validateHsnCode(
     requiredDigits: required
   };
 }
+
+/**
+ * Standard Indian GST tax rates list (0%, 0.1%, 0.25%, 1.5%, 3%, 5%, 12%, 18%, 28%).
+ */
+export const STANDARD_GST_RATES = [0, 0.1, 0.25, 1.5, 3, 5, 12, 18, 28];
+
+/**
+ * Common unit to statutory GST Unit Quantity Code (UQC) mapping table.
+ */
+export const UNIT_TO_UQC_MAP: Record<string, string> = {
+  meters: 'MTR',
+  meter: 'MTR',
+  mtr: 'MTR',
+  m: 'MTR',
+  pcs: 'PCS',
+  pieces: 'PCS',
+  piece: 'PCS',
+  nos: 'PCS',
+  number: 'PCS',
+  numbers: 'PCS',
+  pk: 'PAC',
+  pack: 'PAC',
+  packs: 'PAC',
+  packet: 'PAC',
+  packets: 'PAC',
+  kg: 'KGS',
+  kgs: 'KGS',
+  kilogram: 'KGS',
+  kilograms: 'KGS',
+  cones: 'CON',
+  cone: 'CON',
+  rolls: 'ROL',
+  roll: 'ROL',
+  boxes: 'BOX',
+  box: 'BOX',
+  litres: 'LTR',
+  litre: 'LTR',
+  liters: 'LTR',
+  liter: 'LTR',
+  ltr: 'LTR',
+  l: 'LTR',
+  pairs: 'PRS',
+  pair: 'PRS',
+  prs: 'PRS',
+  grams: 'GMS',
+  gram: 'GMS',
+  gms: 'GMS',
+  g: 'GMS',
+  dozens: 'DOZ',
+  dozen: 'DOZ',
+  doz: 'DOZ',
+  quintal: 'QTL',
+  qtl: 'QTL',
+  tons: 'TON',
+  ton: 'TON',
+  tonne: 'TON',
+  tonnes: 'TON',
+  yards: 'YDS',
+  yard: 'YDS',
+  yd: 'YDS',
+  sqm: 'SQM',
+  'sq.m': 'SQM',
+  'square meters': 'SQM'
+};
+
+/**
+ * Maps a colloquial unit name to statutory GST UQC code.
+ * Returns the mapped UQC or a warning if unmapped.
+ */
+export function mapUnitToUqc(unit: string): { uqc?: string; warning?: string } {
+  if (!unit || typeof unit !== 'string') return {};
+  const cleaned = unit.trim().toLowerCase();
+
+  // If already matches a known valid UQC code in uppercase
+  const upper = unit.trim().toUpperCase();
+  const knownUqcs = new Set(Object.values(UNIT_TO_UQC_MAP));
+  if (knownUqcs.has(upper)) {
+    return { uqc: upper };
+  }
+
+  const mapped = UNIT_TO_UQC_MAP[cleaned];
+  if (mapped) {
+    return { uqc: mapped };
+  }
+
+  return {
+    warning: `Unit '${unit}' could not be mapped to standard GST UQC code (e.g. MTR, PCS, KGS).`
+  };
+}

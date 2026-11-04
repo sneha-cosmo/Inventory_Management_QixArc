@@ -1,4 +1,12 @@
 import { InventoryItem, Category, Warehouse } from '../types';
+import { 
+  TaxSettings, 
+  DEFAULT_TAX_SETTINGS, 
+  validateHsnCode, 
+  STANDARD_GST_RATES, 
+  UNIT_TO_UQC_MAP, 
+  mapUnitToUqc 
+} from '../rules/tax';
 
 export interface RawRowData {
   [header: string]: any;
@@ -22,6 +30,9 @@ export const TARGET_FIELDS: TargetFieldDef[] = [
   { key: 'description', label: 'Description', required: false, type: 'string', aliases: ['description', 'desc', 'details', 'itemdesc', 'item_desc', 'notes'] },
   { key: 'category', label: 'Category', required: true, type: 'string', aliases: ['category', 'categoryname', 'category_name', 'categoryid', 'category_id', 'group', 'type'] },
   { key: 'unit', label: 'Unit', required: true, type: 'string', aliases: ['unit', 'uom', 'measurement', 'unitofmeasure', 'unit_of_measure', 'units'] },
+  { key: 'hsnCode', label: 'HSN/SAC', required: false, type: 'string', aliases: ['hsn', 'hsncode', 'hsn_code', 'sac', 'hsnsac', 'hsn_sac', 'hsn/sac'] },
+  { key: 'gstRate', label: 'GST Rate (%)', required: false, type: 'number', aliases: ['gstrate', 'gst_rate', 'gst', 'taxrate', 'tax_rate', 'tax', 'gstrate(%)', 'gst(%)', 'taxrate(%)', 'gstratepercent'] },
+  { key: 'uqc', label: 'UQC', required: false, type: 'string', aliases: ['uqc', 'unitcode', 'unit_code', 'unitquantitycode', 'uqc_code'] },
   { key: 'unitCost', label: 'Unit Cost', required: false, type: 'number', aliases: ['unitcost', 'unit_cost', 'cost', 'costprice', 'cost_price', 'rate', 'purchaseprice', 'purchase_price'] },
   { key: 'sellingPrice', label: 'Selling Price', required: false, type: 'number', aliases: ['sellingprice', 'selling_price', 'price', 'salesprice', 'sales_price', 'mrp', 'rate_sell'] },
   { key: 'currentStock', label: 'Current Stock', required: false, type: 'number', aliases: ['currentstock', 'current_stock', 'stock', 'qty', 'quantity', 'initialstock', 'openingstock', 'balance'] },
@@ -39,6 +50,8 @@ export interface ValidatedRow {
     sku: string;
     name: string;
     barcode: string;
+    suggestedBarcode?: string;
+    barcodeCheckFailed?: boolean;
     description?: string;
     category: string;
     unit: string;
@@ -50,6 +63,9 @@ export interface ValidatedRow {
     dailyConsumption: number;
     leadTime: number;
     warehouse?: string;
+    hsnCode?: string;
+    gstRate?: number;
+    uqc?: string;
   };
   isValid: boolean;
   errors: string[];
@@ -179,12 +195,23 @@ export function sanitizeCellValue(val: any): { sanitized: string; hasFormulaInje
   return { sanitized: str, hasFormulaInjection };
 }
 
+export function suggestEan13CheckDigit(code: string): string | null {
+  if (!code || typeof code !== 'string') return null;
+  const cleaned = code.trim();
+  if (!/^\d{13}$/.test(cleaned)) return null;
+  const body = cleaned.substring(0, 12);
+  const correctCheck = calculateEan13CheckDigit(body);
+  return `${body}${correctCheck}`;
+}
+
 export interface ValidationContext {
-  existingInventory: InventoryItem[];
-  existingCategories: Category[];
-  existingWarehouses: Warehouse[];
-  createMissingCategoriesWarehouses: boolean;
-  duplicatePolicy: DuplicatePolicy;
+  existingInventory?: InventoryItem[];
+  existingCategories?: Category[];
+  existingWarehouses?: Warehouse[];
+  createMissingCategoriesWarehouses?: boolean;
+  duplicatePolicy?: DuplicatePolicy;
+  taxSettings?: TaxSettings;
+  allowedGstRates?: number[];
 }
 
 /**
@@ -196,11 +223,13 @@ export function validateBulkImportRows(
   context: ValidationContext
 ): ValidatedRow[] {
   const {
-    existingInventory,
-    existingCategories,
-    existingWarehouses,
-    createMissingCategoriesWarehouses,
-    duplicatePolicy
+    existingInventory = [],
+    existingCategories = [],
+    existingWarehouses = [],
+    createMissingCategoriesWarehouses = false,
+    duplicatePolicy = 'skip',
+    taxSettings = DEFAULT_TAX_SETTINGS,
+    allowedGstRates = STANDARD_GST_RATES
   } = context;
 
   const existingSkuMap = new Map<string, InventoryItem>();
@@ -261,6 +290,10 @@ export function validateBulkImportRows(
     const rawLeadTime = getValue('leadTime');
     const rawUnitCost = getValue('unitCost');
     const rawSellingPrice = getValue('sellingPrice');
+
+    const rawHsn = getValue('hsnCode');
+    const rawGstRate = getValue('gstRate');
+    const rawUqc = getValue('uqc');
 
     // 1. Required fields
     if (!rawSku) {
@@ -324,24 +357,38 @@ export function validateBulkImportRows(
         } else if (duplicatePolicy === 'update') {
           warnings.push(`SKU '${rawSku}' exists in inventory master (will update existing item)`);
         } else {
-          warnings.push(`SKU '${rawSku}' already exists in inventory (will be skipped)`);
+          warnings.push(`Skipped - SKU already exists`);
         }
       }
     }
 
     // 4. Barcode validation & generation
-    let finalBarcode = rawBarcode;
+    let finalBarcode = rawBarcode ? rawBarcode.trim() : '';
+    let suggestedBarcode: string | undefined = undefined;
+    let barcodeCheckFailed = false;
+
     if (finalBarcode) {
-      // Validate provided barcode
-      if (!validateEan13CheckDigit(finalBarcode)) {
-        // Check if length is 13 or check digit fails
-        if (finalBarcode.length !== 13 || !/^\d+$/.test(finalBarcode)) {
-          errors.push(`Barcode '${finalBarcode}' must be 13 digits`);
+      if (/^\d{13}$/.test(finalBarcode)) {
+        if (/^(\d)\1{12}$/.test(finalBarcode)) {
+          errors.push(`Barcode '${finalBarcode}' cannot consist of repeated digits`);
+          barcodeCheckFailed = true;
         } else {
-          errors.push(`Barcode '${finalBarcode}' has invalid EAN-13 check digit`);
+          const body = finalBarcode.substring(0, 12);
+          const expectedCheck = calculateEan13CheckDigit(body);
+          const actualCheck = parseInt(finalBarcode[12], 10);
+          if (expectedCheck !== actualCheck) {
+            barcodeCheckFailed = true;
+            suggestedBarcode = `${body}${expectedCheck}`;
+            errors.push(`Barcode '${finalBarcode}' has invalid EAN-13 check digit. Suggested: ${suggestedBarcode}`);
+          }
         }
       } else {
-        // Check duplicate barcode
+        // Non-13 digit format: emit Warning (not Error!)
+        warnings.push(`Barcode '${finalBarcode}' is not standard 13-digit EAN-13 (non-EAN format)`);
+      }
+
+      if (!barcodeCheckFailed) {
+        // Duplicate checks
         if (fileBarcodes.has(finalBarcode)) {
           if (duplicatePolicy === 'reject') {
             errors.push(`Duplicate Barcode '${finalBarcode}' in file`);
@@ -373,7 +420,48 @@ export function validateBulkImportRows(
       warnings.push(`No barcode provided; generated EAN-13: ${finalBarcode}`);
     }
 
-    // 5. Category verification
+    // 5. HSN/SAC validation
+    let finalHsn: string | undefined = rawHsn ? rawHsn.trim() : undefined;
+    if (finalHsn) {
+      const hsnRes = validateHsnCode(finalHsn, taxSettings);
+      if (!hsnRes.valid) {
+        const thresholdLabel = taxSettings.turnoverBand === 'above_5_cr' ? '> ₹5 Cr' : '≤ ₹5 Cr';
+        errors.push(`HSN/SAC '${finalHsn}' must have at least ${hsnRes.requiredDigits} digits for turnover band ${thresholdLabel}`);
+      }
+    }
+
+    // 6. GST Rate validation
+    let finalGstRate: number | undefined = undefined;
+    if (rawGstRate !== undefined && rawGstRate !== '') {
+      const parsedGst = Number(rawGstRate);
+      if (isNaN(parsedGst) || parsedGst < 0) {
+        errors.push(`GST Rate (%) must be a valid non-negative number`);
+      } else {
+        finalGstRate = parsedGst;
+        if (!allowedGstRates.includes(parsedGst)) {
+          warnings.push(`GST Rate ${parsedGst}% is not in standard GST rates (${allowedGstRates.join('%, ')}%)`);
+        }
+      }
+    }
+
+    // 7. UQC code & unit mapping
+    let finalUqc: string | undefined = rawUqc ? rawUqc.trim().toUpperCase() : undefined;
+    if (finalUqc) {
+      const knownUqcs = new Set(Object.values(UNIT_TO_UQC_MAP));
+      if (!knownUqcs.has(finalUqc)) {
+        warnings.push(`UQC code '${rawUqc}' is not a recognized GST Unit Quantity Code`);
+      }
+    } else if (rawUnit) {
+      const mapped = mapUnitToUqc(rawUnit);
+      if (mapped.uqc) {
+        finalUqc = mapped.uqc;
+      }
+      if (mapped.warning) {
+        warnings.push(mapped.warning);
+      }
+    }
+
+    // 8. Category verification
     if (rawCategory) {
       const match = categoryNameMap.get(rawCategory.toLowerCase());
       if (!match && !createMissingCategoriesWarehouses) {
@@ -383,13 +471,13 @@ export function validateBulkImportRows(
       }
     }
 
-    // 6. Warehouse verification
+    // 9. Warehouse verification & incomplete flag warning
     if (rawWarehouse) {
       const whMatch = warehouseNameMap.get(rawWarehouse.toLowerCase());
       if (!whMatch && !createMissingCategoriesWarehouses) {
         errors.push(`Warehouse '${rawWarehouse}' does not exist (enable 'Create missing' to auto-add)`);
       } else if (!whMatch && createMissingCategoriesWarehouses) {
-        warnings.push(`New Warehouse '${rawWarehouse}' will be created`);
+        warnings.push(`New Warehouse '${rawWarehouse}' will be created as incomplete (no GSTIN, address, state code or PIN)`);
       }
     }
 
@@ -403,6 +491,8 @@ export function validateBulkImportRows(
         sku: rawSku,
         name: rawName,
         barcode: finalBarcode,
+        suggestedBarcode,
+        barcodeCheckFailed,
         description: rawDescription || undefined,
         category: rawCategory,
         unit: rawUnit,
@@ -413,7 +503,10 @@ export function validateBulkImportRows(
         safetyStock,
         dailyConsumption,
         leadTime,
-        warehouse: rawWarehouse || undefined
+        warehouse: rawWarehouse || undefined,
+        hsnCode: finalHsn,
+        gstRate: finalGstRate,
+        uqc: finalUqc
       },
       isValid,
       errors,
@@ -437,6 +530,9 @@ export function generateCsvTemplate(): string {
     'Description',
     'Category',
     'Unit',
+    'HSN/SAC',
+    'GST Rate (%)',
+    'UQC',
     'Unit Cost',
     'Selling Price',
     'Current Stock',
@@ -451,10 +547,13 @@ export function generateCsvTemplate(): string {
     [
       'FAB-SILK-001',
       'Raw Mulberry Silk',
-      '8901234567897',
+      '8901234567890',
       'Premium 100% natural mulberry silk fabric roll',
       'Fabrics',
       'meters',
+      '5208',
+      '5',
+      'MTR',
       '450.00',
       '680.00',
       '250',
@@ -467,10 +566,13 @@ export function generateCsvTemplate(): string {
     [
       'BTN-MET-002',
       'Antique Brass Shank Buttons 20mm',
-      '8909876543217',
+      '8909876543210',
       'Cast brass metal shank buttons for outerwear',
       'Accessories',
       'pcs',
+      '9606',
+      '18',
+      'PCS',
       '6.50',
       '12.00',
       '3500',
@@ -753,6 +855,9 @@ export function generateErrorsCsv(rows: ValidatedRow[]): string {
     'Description',
     'Category',
     'Unit',
+    'HSN/SAC',
+    'GST Rate (%)',
+    'UQC',
     'Unit Cost',
     'Selling Price',
     'Current Stock',
@@ -775,6 +880,9 @@ export function generateErrorsCsv(rows: ValidatedRow[]): string {
         r.data.description || '',
         r.data.category || '',
         r.data.unit || '',
+        r.data.hsnCode || '',
+        r.data.gstRate !== undefined ? r.data.gstRate.toString() : '',
+        r.data.uqc || '',
         r.data.unitCost?.toString() || '',
         r.data.sellingPrice?.toString() || '',
         r.data.currentStock.toString(),
@@ -818,3 +926,16 @@ export async function processImportInChunks<T, R>(
 
   return results;
 }
+
+// Re-export sample file generator functions and constants from the import feature
+export {
+  generateBlankTemplateCsv,
+  generateSampleFile,
+  getSampleFileName,
+  pickDistinctProducts,
+  BLANK_TEMPLATE_HEADERS,
+  SAMPLE_PRODUCTS_POOL,
+  type SampleProductPoolItem,
+  type GenerateSampleOptions,
+  type PickRng
+} from '../features/import/sampleFile';
