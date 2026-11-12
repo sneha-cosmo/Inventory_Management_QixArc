@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Clock } from '../rules/clock';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -45,7 +46,7 @@ import { Language } from '../locales';
 
 export interface ProductionHistoryRecord {
   id: string;
-  date: string; // e.g. "2026-01-15"
+  date: string; // e.g. "YYYY-MM-DD"
   itemId: string;
   itemName: string;
   plannedQty: number;
@@ -60,7 +61,7 @@ export interface ProductionHistoryRecord {
 
 export interface ReorderHistoryRecord {
   id: string;
-  date: string; // e.g. "2026-01-01"
+  date: string; // e.g. "YYYY-MM-DD"
   itemId: string;
   itemName: string;
   currentStock: number;
@@ -78,353 +79,69 @@ interface ProductionReorderHistoryPanelProps {
   onApplyAdaptiveSettings: (settings: Record<string, number>) => void;
 }
 
-// High-fidelity seeded historical production runs (Jan - May 2026)
-const DEFAULT_PRODUCTION_HISTORY: ProductionHistoryRecord[] = [
-  // Jan 2026
-  {
-    id: 'PR-202601-01',
-    date: '2026-01-15',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    plannedQty: 180,
-    plannedRate: 130,
-    plannedCost: 23400,
-    actualQty: 194,
-    actualRate: 135,
-    actualCost: 26190,
-    variance: 2790,
-    variancePercent: 11.92
-  },
-  {
-    id: 'PR-202601-02',
-    date: '2026-01-20',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    plannedQty: 60,
-    plannedRate: 50,
-    plannedCost: 3000,
-    actualQty: 64,
-    actualRate: 55,
-    actualCost: 3520,
-    variance: 520,
-    variancePercent: 17.33
-  },
-  {
-    id: 'PR-202601-03',
-    date: '2026-01-25',
-    itemId: '3',
-    itemName: 'Buttons (Standard)',
-    plannedQty: 1000,
-    plannedRate: 7,
-    plannedCost: 7000,
-    actualQty: 1050,
-    actualRate: 8,
-    actualCost: 8400,
-    variance: 1400,
-    variancePercent: 20.00
-  },
-  // Feb 2026
-  {
-    id: 'PR-202602-01',
-    date: '2026-02-10',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    plannedQty: 150,
-    plannedRate: 130,
-    plannedCost: 19500,
-    actualQty: 142,
-    actualRate: 132,
-    actualCost: 18744,
-    variance: -756,
-    variancePercent: -3.88
-  },
-  {
-    id: 'PR-202602-02',
-    date: '2026-02-18',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    plannedQty: 50,
-    plannedRate: 50,
-    plannedCost: 2500,
-    actualQty: 50,
-    actualRate: 52,
-    actualCost: 2600,
-    variance: 100,
-    variancePercent: 4.00
-  },
-  {
-    id: 'PR-202602-03',
-    date: '2026-02-25',
-    itemId: '3',
-    itemName: 'Buttons (Standard)',
-    plannedQty: 800,
-    plannedRate: 7,
-    plannedCost: 5600,
-    actualQty: 780,
-    actualRate: 7.5,
-    actualCost: 5850,
-    variance: 250,
-    variancePercent: 4.46
-  },
-  // Mar 2026
-  {
-    id: 'PR-202603-01',
-    date: '2026-03-05',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    plannedQty: 220,
-    plannedRate: 133,
-    plannedCost: 29260,
-    actualQty: 238,
-    actualRate: 138,
-    actualCost: 32844,
-    variance: 3584,
-    variancePercent: 12.25
-  },
-  {
-    id: 'PR-202603-02',
-    date: '2026-03-15',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    plannedQty: 70,
-    plannedRate: 55,
-    plannedCost: 3850,
-    actualQty: 78,
-    actualRate: 55,
-    actualCost: 4290,
-    variance: 440,
-    variancePercent: 11.43
-  },
-  {
-    id: 'PR-202603-03',
-    date: '2026-03-24',
-    itemId: '3',
-    itemName: 'Buttons (Standard)',
-    plannedQty: 1200,
-    plannedRate: 8,
-    plannedCost: 9600,
-    actualQty: 1180,
-    actualRate: 8,
-    actualCost: 9440,
-    variance: -160,
-    variancePercent: -1.67
-  },
-  // Apr 2026
-  {
-    id: 'PR-202604-12',
-    date: '2026-04-12',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    plannedQty: 200,
-    plannedRate: 135,
-    plannedCost: 27000,
-    actualQty: 195,
-    actualRate: 134,
-    actualCost: 26130,
-    variance: -870,
-    variancePercent: -3.22
-  },
-  {
-    id: 'PR-202604-18',
-    date: '2026-04-18',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    plannedQty: 65,
-    plannedRate: 55,
-    plannedCost: 3575,
-    actualQty: 62,
-    actualRate: 54,
-    actualCost: 3348,
-    variance: -227,
-    variancePercent: -6.35
-  },
-  {
-    id: 'PR-202604-20',
-    date: '2026-04-26',
-    itemId: '3',
-    itemName: 'Buttons (Standard)',
-    plannedQty: 1100,
-    plannedRate: 8,
-    plannedCost: 8800,
-    actualQty: 1150,
-    actualRate: 8.2,
-    actualCost: 9430,
-    variance: 630,
-    variancePercent: 7.16
-  },
-  // May 2026
-  {
-    id: 'PR-202605-04',
-    date: '2026-05-14',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    plannedQty: 300,
-    plannedRate: 135,
-    plannedCost: 40500,
-    actualQty: 315,
-    actualRate: 136,
-    actualCost: 42840,
-    variance: 2340,
-    variancePercent: 5.78
-  },
-  {
-    id: 'PR-202605-18',
-    date: '2026-05-18',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    plannedQty: 80,
-    plannedRate: 55,
-    plannedCost: 4400,
-    actualQty: 84,
-    actualRate: 56,
-    actualCost: 4704,
-    variance: 304,
-    variancePercent: 6.91
-  },
-  {
-    id: 'PR-202605-24',
-    date: '2026-05-24',
-    itemId: '3',
-    itemName: 'Buttons (Standard)',
-    plannedQty: 1500,
-    plannedRate: 8,
-    plannedCost: 12000,
-    actualQty: 1540,
-    actualRate: 8.1,
-    actualCost: 12474,
-    variance: 474,
-    variancePercent: 3.95
-  }
-];
+// Dynamically generated high-fidelity seeded historical production runs (last 5 months relative to Clock)
+function generateDefaultProductionHistory(): ProductionHistoryRecord[] {
+  const months = Clock.getRecentMonths(5);
+  const items = [
+    { itemId: '1', itemName: 'Fabric (Cotton)', plannedQty: 180, plannedRate: 130, plannedCost: 23400, actualQty: 194, actualRate: 135, actualCost: 26190, variance: 2790, variancePercent: 11.92, day: '15' },
+    { itemId: '2', itemName: 'Thread (Polyester)', plannedQty: 60, plannedRate: 50, plannedCost: 3000, actualQty: 64, actualRate: 55, actualCost: 3520, variance: 520, variancePercent: 17.33, day: '20' },
+    { itemId: '3', itemName: 'Buttons (Standard)', plannedQty: 1000, plannedRate: 7, plannedCost: 7000, actualQty: 1050, actualRate: 8, actualCost: 8400, variance: 1400, variancePercent: 20.00, day: '25' }
+  ];
 
-// High-fidelity seeded historical reorder prediction feedback logs
-const DEFAULT_REORDER_HISTORY: ReorderHistoryRecord[] = [
-  // Jan 2026
-  {
-    id: 'RR-202601-01',
-    date: '2026-01-01',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    currentStock: 250,
-    reorderLevel: 350,
-    reorderQuantity: 100,
-    needsReorder: true,
-    actualConsumptionObserved: 124,
-    errorRate: 24.00
-  },
-  {
-    id: 'RR-202601-02',
-    date: '2026-01-01',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    currentStock: 120,
-    reorderLevel: 190,
-    reorderQuantity: 70,
-    needsReorder: true,
-    actualConsumptionObserved: 82,
-    errorRate: 17.14
-  },
-  // Feb 2026
-  {
-    id: 'RR-202602-01',
-    date: '2026-02-01',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    currentStock: 120,
-    reorderLevel: 350,
-    reorderQuantity: 230,
-    needsReorder: true,
-    actualConsumptionObserved: 212,
-    errorRate: -7.83
-  },
-  {
-    id: 'RR-202602-02',
-    date: '2026-02-01',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    currentStock: 80,
-    reorderLevel: 190,
-    reorderQuantity: 110,
-    needsReorder: true,
-    actualConsumptionObserved: 101,
-    errorRate: -8.18
-  },
-  // Mar 2026
-  {
-    id: 'RR-202603-01',
-    date: '2026-03-01',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    currentStock: 180,
-    reorderLevel: 375,
-    reorderQuantity: 195,
-    needsReorder: true,
-    actualConsumptionObserved: 218,
-    errorRate: 11.79
-  },
-  {
-    id: 'RR-202603-02',
-    date: '2026-03-01',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    currentStock: 95,
-    reorderLevel: 190,
-    reorderQuantity: 95,
-    needsReorder: true,
-    actualConsumptionObserved: 110,
-    errorRate: 15.79
-  },
-  // Apr 2026
-  {
-    id: 'RR-202604-01',
-    date: '2026-04-01',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    currentStock: 210,
-    reorderLevel: 375,
-    reorderQuantity: 165,
-    needsReorder: true,
-    actualConsumptionObserved: 162,
-    errorRate: -1.82
-  },
-  {
-    id: 'RR-202604-02',
-    date: '2026-04-01',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    currentStock: 110,
-    reorderLevel: 190,
-    reorderQuantity: 80,
-    needsReorder: true,
-    actualConsumptionObserved: 78,
-    errorRate: -2.50
-  },
-  // May 2026
-  {
-    id: 'RR-202605-01',
-    date: '2026-05-01',
-    itemId: '1',
-    itemName: 'Fabric (Cotton)',
-    currentStock: 100,
-    reorderLevel: 400,
-    reorderQuantity: 300,
-    needsReorder: true,
-    actualConsumptionObserved: 326,
-    errorRate: 8.67
-  },
-  {
-    id: 'RR-202605-02',
-    date: '2026-05-01',
-    itemId: '2',
-    itemName: 'Thread (Polyester)',
-    currentStock: 60,
-    reorderLevel: 190,
-    reorderQuantity: 130,
-    needsReorder: true,
-    actualConsumptionObserved: 136,
-    errorRate: 4.62
-  }
-];
+  const records: ProductionHistoryRecord[] = [];
+  months.forEach(m => {
+    const compactCode = m.key.replace('-', '');
+    items.forEach((it, itIdx) => {
+      records.push({
+        id: `PR-${compactCode}-0${itIdx + 1}`,
+        date: `${m.key}-${it.day}`,
+        itemId: it.itemId,
+        itemName: it.itemName,
+        plannedQty: it.plannedQty,
+        plannedRate: it.plannedRate,
+        plannedCost: it.plannedCost,
+        actualQty: it.actualQty,
+        actualRate: it.actualRate,
+        actualCost: it.actualCost,
+        variance: it.variance,
+        variancePercent: it.variancePercent
+      });
+    });
+  });
+  return records;
+}
+
+const DEFAULT_PRODUCTION_HISTORY: ProductionHistoryRecord[] = generateDefaultProductionHistory();
+
+function generateDefaultReorderHistory(): ReorderHistoryRecord[] {
+  const months = Clock.getRecentMonths(5);
+  const items = [
+    { itemId: '1', itemName: 'Fabric (Cotton)', currentStock: 350, reorderLevel: 250, reorderQuantity: 300, needsReorder: false, actualConsumptionObserved: 280, errorRate: -6.67 },
+    { itemId: '2', itemName: 'Thread (Polyester)', currentStock: 120, reorderLevel: 150, reorderQuantity: 200, needsReorder: true, actualConsumptionObserved: 215, errorRate: 7.50 }
+  ];
+
+  const records: ReorderHistoryRecord[] = [];
+  months.forEach(m => {
+    const compactCode = m.key.replace('-', '');
+    items.forEach((it, itIdx) => {
+      records.push({
+        id: `RR-${compactCode}-0${itIdx + 1}`,
+        date: `${m.key}-01`,
+        itemId: it.itemId,
+        itemName: it.itemName,
+        currentStock: it.currentStock,
+        reorderLevel: it.reorderLevel,
+        reorderQuantity: it.reorderQuantity,
+        needsReorder: it.needsReorder,
+        actualConsumptionObserved: it.actualConsumptionObserved,
+        errorRate: it.errorRate
+      });
+    });
+  });
+  return records;
+}
+
+export const DEFAULT_REORDER_HISTORY: ReorderHistoryRecord[] = generateDefaultReorderHistory();
 
 export default function ProductionReorderHistoryPanel({
   inventory,
@@ -456,7 +173,7 @@ export default function ProductionReorderHistoryPanel({
 
   // Form Adding State: Production Run
   const [showAddProd, setShowAddProd] = useState(false);
-  const [prodDate, setProdDate] = useState('2026-05-29');
+  const [prodDate, setProdDate] = useState(() => Clock.getCurrentDateString());
   const [prodItemId, setProdItemId] = useState(inventory[0]?.id || '1');
   const [plannedQty, setPlannedQty] = useState('');
   const [plannedRate, setPlannedRate] = useState('');
@@ -465,7 +182,7 @@ export default function ProductionReorderHistoryPanel({
 
   // Form Adding State: Reorder Predict Record
   const [showAddPredict, setShowAddPredict] = useState(false);
-  const [predictDate, setPredictDate] = useState('2026-05-29');
+  const [predictDate, setPredictDate] = useState(() => Clock.getCurrentDateString());
   const [predictItemId, setPredictItemId] = useState(inventory[0]?.id || '1');
   const [currentStock, setCurrentStock] = useState('');
   const [reorderLevel, setReorderLevel] = useState('');
@@ -652,18 +369,17 @@ export default function ProductionReorderHistoryPanel({
   // Grouped monthly chart data for Production Planned vs Actual Costs
   const monthlyProductionChartData = useMemo(() => {
     const monthsGroup: Record<string, { month: string; planned: number; actual: number; variance: number }> = {};
-    const monthsMap: Record<string, string> = {
-      '01': 'Jan 2026',
-      '02': 'Feb 2026',
-      '03': 'Mar 2026',
-      '04': 'Apr 2026',
-      '05': 'May 2026',
-      '06': 'Jun 2026'
-    };
+    const recent = Clock.getRecentMonths(6);
+    const monthsMap: Record<string, string> = {};
+    recent.forEach(r => {
+      monthsMap[r.monthCode] = r.label;
+      monthsMap[r.key] = r.label;
+    });
 
     filteredProdHistoryList.forEach(r => {
+      const monthPrefix = r.date.substring(0, 7);
       const monthCode = r.date.substring(5, 7);
-      const monthLabel = monthsMap[monthCode] || r.date.substring(0, 7);
+      const monthLabel = monthsMap[monthPrefix] || monthsMap[monthCode] || monthPrefix;
       
       if (!monthsGroup[monthLabel]) {
         monthsGroup[monthLabel] = { month: monthLabel, planned: 0, actual: 0, variance: 0 };

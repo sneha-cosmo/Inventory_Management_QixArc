@@ -1,25 +1,11 @@
+import { describe, it, expect } from 'vitest';
 import { 
   parseFlexibleDate, 
-  calculateExpiryStatus, 
   validateBulkImportBatches 
-} from './batchImport';
-import { InventoryItem, Batch, Warehouse } from '../types';
+} from '../src/utils/batchImport';
+import { InventoryItem, Batch, Warehouse } from '../src/types';
 
-export function runBatchValidationUnitTests() {
-  console.log('🧪 Starting Batch Import Validation Unit Tests...\n');
-  let passed = 0;
-  let failed = 0;
-
-  function assert(condition: boolean, testName: string) {
-    if (condition) {
-      console.log(`  ✅ PASS: ${testName}`);
-      passed++;
-    } else {
-      console.error(`  ❌ FAIL: ${testName}`);
-      failed++;
-    }
-  }
-
+describe('Batch Import Validation Unit Tests', () => {
   const mockInventory: InventoryItem[] = [
     {
       id: 'item-1',
@@ -61,31 +47,25 @@ export function runBatchValidationUnitTests() {
     expiryDate: 'Expiry Date'
   };
 
-  // Test 1: DD/MM/YYYY vs MM/DD ambiguity
-  console.log('Test 1: Indian date format parsing (DD/MM/YYYY vs MM/DD)');
-  {
+  it('Test 1: Indian date format parsing (DD/MM/YYYY vs MM/DD)', () => {
     const parsed = parseFlexibleDate('05/03/2027');
-    assert(parsed.dateString === '2027-03-05', '05/03/2027 is parsed strictly as 5th March 2027, never May 3rd');
-    assert(parsed.formattedDisplay.includes('05/03/2027') || parsed.formattedDisplay.includes('5/3/2027'), 'Preview displays parsed components clearly');
+    expect(parsed.dateString).toBe('2027-03-05');
+    expect(parsed.formattedDisplay.includes('05/03/2027') || parsed.formattedDisplay.includes('5/3/2027')).toBe(true);
 
     const hyphenParsed = parseFlexibleDate('25-12-2026');
-    assert(hyphenParsed.dateString === '2026-12-25', '25-12-2026 parsed as 25th December 2026');
+    expect(hyphenParsed.dateString).toBe('2026-12-25');
 
     const invalidDay = parseFlexibleDate('32/01/2027');
-    assert(invalidDay.error !== undefined, 'Invalid day (32) rejected');
-  }
+    expect(invalidDay.error).toBeDefined();
+  });
 
-  // Test 2: Excel serial date
-  console.log('\nTest 2: Excel serial date number conversion');
-  {
-    // 46083 in Excel serial is 2026-03-02
+  it('Test 2: Excel serial date number conversion', () => {
     const parsedExcel = parseFlexibleDate('46083');
-    assert(parsedExcel.dateString !== null && parsedExcel.dateString.startsWith('2026-'), 'Excel serial 46083 converted to valid ISO date string');
-  }
+    expect(parsedExcel.dateString).not.toBeNull();
+    expect(parsedExcel.dateString?.startsWith('2026-')).toBe(true);
+  });
 
-  // Test 3: Expiry before manufacturing date
-  console.log('\nTest 3: Expiry before manufacturing date');
-  {
+  it('Test 3: Expiry before manufacturing date', () => {
     const rows = [
       {
         'Batch Number': 'LOT-ERR-01',
@@ -93,7 +73,7 @@ export function runBatchValidationUnitTests() {
         'Warehouse': 'Main Warehouse',
         'Quantity': '100',
         'Manufacturing Date': '2026-06-01',
-        'Expiry Date': '2026-05-01' // Expiry before Mfg!
+        'Expiry Date': '2026-05-01'
       }
     ];
 
@@ -105,13 +85,11 @@ export function runBatchValidationUnitTests() {
       duplicatePolicy: 'skip'
     });
 
-    assert(!result.rows[0].isValid, 'Row marked invalid');
-    assert(result.rows[0].errors.some(e => e.includes('must be after manufacturing date')), 'Clear error message on inverted dates');
-  }
+    expect(result.rows[0].isValid).toBe(false);
+    expect(result.rows[0].errors.some(e => e.includes('must be after manufacturing date'))).toBe(true);
+  });
 
-  // Test 4: Past expiry (Allowed as Warning with status Expired)
-  console.log('\nTest 4: Past expiry date handling');
-  {
+  it('Test 4: Past expiry date handling', () => {
     const rows = [
       {
         'Batch Number': 'LOT-OLD-01',
@@ -119,7 +97,7 @@ export function runBatchValidationUnitTests() {
         'Warehouse': 'Main Warehouse',
         'Quantity': '50',
         'Manufacturing Date': '2025-01-01',
-        'Expiry Date': '2025-12-31' // Past date relative to 2026-05-26
+        'Expiry Date': '2025-12-31'
       }
     ];
 
@@ -131,14 +109,12 @@ export function runBatchValidationUnitTests() {
       duplicatePolicy: 'skip'
     });
 
-    assert(result.rows[0].isValid, 'Past expiry row is VALID (allowed for legacy inventory loading)');
-    assert(result.rows[0].expiryMeta.status === 'Expired', 'Status is Expired');
-    assert(result.rows[0].warnings.some(w => w.includes('flagged as Expired')), 'Warning provided to alert user');
-  }
+    expect(result.rows[0].isValid).toBe(true);
+    expect(result.rows[0].expiryMeta.status).toBe('Expired');
+    expect(result.rows[0].warnings.some(w => w.includes('flagged as Expired'))).toBe(true);
+  });
 
-  // Test 5: Unknown SKU
-  console.log('\nTest 5: Unknown SKU rejection');
-  {
+  it('Test 5: Unknown SKU rejection', () => {
     const rows = [
       {
         'Batch Number': 'LOT-UNKNOWN',
@@ -157,13 +133,11 @@ export function runBatchValidationUnitTests() {
       duplicatePolicy: 'skip'
     });
 
-    assert(!result.rows[0].isValid, 'Row with unknown SKU is invalid');
-    assert(result.rows[0].errors.some(e => e.includes('import this item first')), 'Helpful hint to import parent item first');
-  }
+    expect(result.rows[0].isValid).toBe(false);
+    expect(result.rows[0].errors.some(e => e.includes('import this item first'))).toBe(true);
+  });
 
-  // Test 6: Duplicate in file
-  console.log('\nTest 6: Duplicate batch in file');
-  {
+  it('Test 6: Duplicate batch in file', () => {
     const rows = [
       {
         'Batch Number': 'LOT-DUP-01',
@@ -189,14 +163,12 @@ export function runBatchValidationUnitTests() {
       duplicatePolicy: 'skip'
     });
 
-    assert(result.rows[0].isValid, 'First occurrence valid');
-    assert(result.rows[1].isDuplicateInFile === true, 'Second occurrence detected as duplicate in file');
-    assert(result.rows[1].warnings.some(w => w.includes('Repeated in file')), 'Warning generated under skip policy');
-  }
+    expect(result.rows[0].isValid).toBe(true);
+    expect(result.rows[1].isDuplicateInFile).toBe(true);
+    expect(result.rows[1].warnings.some(w => w.includes('Repeated in file'))).toBe(true);
+  });
 
-  // Test 7: Duplicate against existing with each policy (skip, add_quantity, reject)
-  console.log('\nTest 7: Duplicate against existing with duplicate policies');
-  {
+  it('Test 7: Duplicate against existing with each duplicate policy (skip, add_quantity, reject)', () => {
     const duplicateRow = [
       {
         'Batch Number': 'LOT-EXISTING-01',
@@ -215,7 +187,8 @@ export function runBatchValidationUnitTests() {
       createMissingWarehouses: false,
       duplicatePolicy: 'skip'
     });
-    assert(skipRes.rows[0].isDuplicateInExisting && skipRes.rows[0].warnings.some(w => w.includes('will be skipped')), 'Skip policy flags warning to skip');
+    expect(skipRes.rows[0].isDuplicateInExisting).toBe(true);
+    expect(skipRes.rows[0].warnings.some(w => w.includes('will be skipped'))).toBe(true);
 
     // Policy: Add Quantity
     const addRes = validateBulkImportBatches(duplicateRow, standardMapping, {
@@ -225,7 +198,8 @@ export function runBatchValidationUnitTests() {
       createMissingWarehouses: false,
       duplicatePolicy: 'add_quantity'
     });
-    assert(addRes.rows[0].isDuplicateInExisting && addRes.rows[0].warnings.some(w => w.includes('will be increased by 100')), 'Add Quantity policy specifies increase from 150 by 100');
+    expect(addRes.rows[0].isDuplicateInExisting).toBe(true);
+    expect(addRes.rows[0].warnings.some(w => w.includes('will be increased by 100'))).toBe(true);
 
     // Policy: Reject
     const rejectRes = validateBulkImportBatches(duplicateRow, standardMapping, {
@@ -235,12 +209,11 @@ export function runBatchValidationUnitTests() {
       createMissingWarehouses: false,
       duplicatePolicy: 'reject'
     });
-    assert(!rejectRes.rows[0].isValid && rejectRes.rows[0].errors.some(e => e.includes('already exists')), 'Reject policy marks row as error');
-  }
+    expect(rejectRes.rows[0].isValid).toBe(false);
+    expect(rejectRes.rows[0].errors.some(e => e.includes('already exists'))).toBe(true);
+  });
 
-  // Test 8: Quantity zero or negative
-  console.log('\nTest 8: Quantity zero or negative');
-  {
+  it('Test 8: Quantity zero or negative', () => {
     const zeroRows = [
       {
         'Batch Number': 'LOT-ZERO',
@@ -266,13 +239,13 @@ export function runBatchValidationUnitTests() {
       duplicatePolicy: 'skip'
     });
 
-    assert(!result.rows[0].isValid && result.rows[0].errors.some(e => e.includes('must be greater than 0')), 'Zero quantity rejected');
-    assert(!result.rows[1].isValid && result.rows[1].errors.some(e => e.includes('must be greater than 0')), 'Negative quantity rejected');
-  }
+    expect(result.rows[0].isValid).toBe(false);
+    expect(result.rows[0].errors.some(e => e.includes('must be greater than 0'))).toBe(true);
+    expect(result.rows[1].isValid).toBe(false);
+    expect(result.rows[1].errors.some(e => e.includes('must be greater than 0'))).toBe(true);
+  });
 
-  // Test 9: Formula injection cell
-  console.log('\nTest 9: Formula injection cell');
-  {
+  it('Test 9: Formula injection cell', () => {
     const injRows = [
       {
         'Batch Number': '=cmd|/c calc!A0',
@@ -291,12 +264,7 @@ export function runBatchValidationUnitTests() {
       duplicatePolicy: 'skip'
     });
 
-    assert(!result.rows[0].isValid, 'Row with formula injection rejected');
-    assert(result.rows[0].errors.some(e => e.includes('forbidden formula characters')), 'Formula character error message');
-  }
-
-  console.log(`\n🎉 Batch Validation Unit Tests: ${passed} passed, ${failed} failed.\n`);
-  if (failed > 0) process.exit(1);
-}
-
-runBatchValidationUnitTests();
+    expect(result.rows[0].isValid).toBe(false);
+    expect(result.rows[0].errors.some(e => e.includes('forbidden formula characters'))).toBe(true);
+  });
+});

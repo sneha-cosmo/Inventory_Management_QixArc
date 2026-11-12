@@ -230,23 +230,34 @@ export interface VarianceAnalysis {
   status: 'profit' | 'loss' | 'neutral';
 }
 
+export type CanonicalRole = 'admin' | 'inventory_manager' | 'billing_clerk' | 'production_supervisor' | 'viewer';
+export type StaffRole = CanonicalRole | 'staff_viewer';
+
+export interface StaffPermissions {
+  createOrders?: boolean;
+  editInventory?: boolean;
+  makeAdjustments?: boolean;
+  manageBatches?: boolean;
+  manageWarehouses?: boolean;
+  viewFinancials?: boolean;
+  manageStaff?: boolean;
+  generateReports?: boolean;
+  deleteAuditLogs?: boolean;
+  // Legacy / granular keys
+  executeRecall?: boolean;
+  manageSuppliers?: boolean;
+  recordPayments?: boolean;
+  viewReports?: boolean;
+  [key: string]: boolean | undefined;
+}
+
 export interface Staff {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'inventory_manager' | 'billing_clerk' | 'staff_viewer';
+  role: StaffRole;
   lastActive?: string;
-  permissions: {
-    editInventory: boolean;
-    manageBatches: boolean;
-    makeAdjustments: boolean;
-    executeRecall: boolean;
-    manageSuppliers: boolean;
-    createOrders: boolean;
-    recordPayments: boolean;
-    viewReports: boolean;
-    manageStaff: boolean;
-  };
+  permissions?: StaffPermissions;
 }
 
 export type EwayBillStatus = 'ACT' | 'CNL' | 'EXP';
@@ -342,7 +353,7 @@ export interface EwayBill {
 
 export interface DeliveryChallan {
   id: string;
-  challanNumber: string; // E.g. CHL-2026-001
+  challanNumber: string; // E.g. CHL-001
   challanDate: string;
   transferId: string;
   sourceWarehouseId: string;

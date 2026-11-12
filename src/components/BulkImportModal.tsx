@@ -68,6 +68,7 @@ import { Clock } from '../rules/clock';
 import { InventoryItem, Category, Warehouse, Staff } from '../types';
 import { Language, LOCALES, tText } from '../locales';
 import { TaxSettings } from '../rules/tax';
+import { can } from '../rules/permissions';
 
 interface BulkImportModalProps {
   open: boolean;
@@ -111,7 +112,7 @@ export default function BulkImportModal({
   const t = LOCALES[language];
   
   // Re-verify clearance
-  const isAuthorized = currentUser.role === 'admin' || currentUser.role === 'inventory_manager';
+  const isAuthorized = can(currentUser, 'editInventory');
 
   // Modal Step: 1 (Upload), 2 (Map), 3 (Review), 4 (Done)
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
@@ -423,7 +424,6 @@ export default function BulkImportModal({
   const handleExecuteImport = async () => {
     // Re-check clearance
     if (!isAuthorized) {
-      alert(t.permissionDeniedImport);
       return;
     }
 

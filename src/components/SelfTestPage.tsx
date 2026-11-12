@@ -259,7 +259,7 @@ export default function SelfTestPage({ currentUser, onNavigateHome }: SelfTestPa
     }
 
     return results;
-  }, [todayDate, todayDateString]);
+  }, [todayDateString]);
 
   const passedCount = testResults.filter(t => t.passed).length;
   const totalCount = testResults.length;

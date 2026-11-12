@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Clock } from '../rules/clock';
 import { 
   ArrowLeftRight,
   Plus,
@@ -74,7 +75,7 @@ const INITIAL_TABLES: TableOrder[] = [
       { itemId: '1', itemName: 'Fabric (Cotton)', quantity: 20, rate: 130 },
       { itemId: '3', itemName: 'Buttons (Standard)', quantity: 150, rate: 8 }
     ],
-    date: '2026-05-29'
+    date: Clock.getCurrentDateString()
   },
   {
     id: 'T-2',
@@ -86,7 +87,7 @@ const INITIAL_TABLES: TableOrder[] = [
       { itemId: '2', itemName: 'Thread (Polyester)', quantity: 35, rate: 55 },
       { itemId: '1', itemName: 'Fabric (Cotton)', quantity: 10, rate: 130 }
     ],
-    date: '2026-05-29'
+    date: Clock.getCurrentDateString()
   },
   {
     id: 'T-3',
@@ -95,7 +96,7 @@ const INITIAL_TABLES: TableOrder[] = [
     customerId: '',
     customerName: '',
     items: [],
-    date: '2026-05-29'
+    date: Clock.getCurrentDateString()
   },
   {
     id: 'T-4',
@@ -106,7 +107,7 @@ const INITIAL_TABLES: TableOrder[] = [
     items: [
       { itemId: '3', itemName: 'Buttons (Standard)', quantity: 400, rate: 8 }
     ],
-    date: '2026-05-29'
+    date: Clock.getCurrentDateString()
   },
   {
     id: 'T-5',
@@ -115,7 +116,7 @@ const INITIAL_TABLES: TableOrder[] = [
     customerId: '',
     customerName: '',
     items: [],
-    date: '2026-05-29'
+    date: Clock.getCurrentDateString()
   },
   {
     id: 'T-6',
@@ -124,7 +125,7 @@ const INITIAL_TABLES: TableOrder[] = [
     customerId: '',
     customerName: '',
     items: [],
-    date: '2026-05-29'
+    date: Clock.getCurrentDateString()
   }
 ];
 

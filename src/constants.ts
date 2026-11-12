@@ -1,4 +1,5 @@
 import { InventoryItem, ProductionOrder, Warehouse, Category, Customer, Invoice, Payment, SalesOrder, Supplier, PurchaseOrder, InventoryAdjustment, EwayBill } from './types';
+import { Clock } from './rules/clock';
 
 export const INITIAL_INVENTORY: InventoryItem[] = [
   {
@@ -177,8 +178,8 @@ export const INITIAL_INVOICES: Invoice[] = [
     id: 'INV-001',
     orderId: 'SO-001',
     orderType: 'sales',
-    date: '2024-05-10',
-    dueDate: '2024-05-24',
+    date: Clock.offsetDaysString(-20),
+    dueDate: Clock.offsetDaysString(-6),
     totalAmount: 26250,
     paidAmount: 26250,
     status: 'paid',
@@ -189,14 +190,14 @@ export const INITIAL_INVOICES: Invoice[] = [
     irnGenerated: true,
     irn: '5f89c6742a1b90c375d8ebd14e8fbf3a47bce12745a90d81eefc54bdc82ef941',
     ackNumber: '1029384756',
-    ackDate: '2024-05-10 10:45:00'
+    ackDate: Clock.offsetDaysString(-20) + ' 10:45:00'
   },
   {
     id: 'INV-002',
     orderId: 'SO-002',
     orderType: 'sales',
-    date: '2024-05-12',
-    dueDate: '2024-05-26',
+    date: Clock.offsetDaysString(-18),
+    dueDate: Clock.offsetDaysString(-4),
     totalAmount: 20720,
     paidAmount: 5000,
     status: 'partial',
@@ -211,7 +212,7 @@ export const INITIAL_PAYMENTS: Payment[] = [
   {
     id: 'PAY-001',
     invoiceId: 'INV-001',
-    date: '2024-05-11',
+    date: Clock.offsetDaysString(-19),
     amount: 26250,
     method: 'bank_transfer',
     reference: 'TXN12345678'
@@ -219,7 +220,7 @@ export const INITIAL_PAYMENTS: Payment[] = [
   {
     id: 'PAY-002',
     invoiceId: 'INV-002',
-    date: '2024-05-13',
+    date: Clock.offsetDaysString(-17),
     amount: 5000,
     method: 'cash'
   }
@@ -230,7 +231,7 @@ export const INITIAL_SALES_ORDERS: SalesOrder[] = [
     id: 'SO-001',
     customerId: 'cust-1',
     customerName: 'Elite Apparels',
-    date: '2024-05-10',
+    date: Clock.offsetDaysString(-20),
     status: 'delivered',
     items: [{ itemId: '1', quantity: 100, rate: 250 }],
     totalAmount: 26250
@@ -239,7 +240,7 @@ export const INITIAL_SALES_ORDERS: SalesOrder[] = [
     id: 'SO-002',
     customerId: 'cust-2',
     customerName: 'Global Textiles',
-    date: '2024-05-12',
+    date: Clock.offsetDaysString(-18),
     status: 'shipped',
     items: [{ itemId: '2', quantity: 185, rate: 100 }],
     totalAmount: 20720
@@ -248,8 +249,8 @@ export const INITIAL_SALES_ORDERS: SalesOrder[] = [
 
 export const INITIAL_ORDERS: ProductionOrder[] = [
   {
-    id: 'ORD-2026-001',
-    date: '2026-05-15',
+    id: 'ORD-101',
+    date: Clock.offsetDaysString(-15),
     status: 'completed',
     items: [
       {
@@ -264,8 +265,8 @@ export const INITIAL_ORDERS: ProductionOrder[] = [
     ]
   },
   {
-    id: 'ORD-2026-002',
-    date: '2026-05-20',
+    id: 'ORD-102',
+    date: Clock.offsetDaysString(-10),
     status: 'completed',
     items: [
       {
@@ -327,7 +328,7 @@ export const INITIAL_PURCHASE_ORDERS: PurchaseOrder[] = [
   {
     id: 'PO-001',
     supplierId: 'sup-1',
-    date: '2026-05-15',
+    date: Clock.offsetDaysString(-15),
     status: 'received',
     items: [
       { itemId: '1', quantity: 300, rate: 135 }
@@ -337,7 +338,7 @@ export const INITIAL_PURCHASE_ORDERS: PurchaseOrder[] = [
   {
     id: 'PO-002',
     supplierId: 'sup-2',
-    date: '2026-05-18',
+    date: Clock.offsetDaysString(-12),
     status: 'received',
     items: [
       { itemId: '2', quantity: 50, rate: 55 }
@@ -347,7 +348,7 @@ export const INITIAL_PURCHASE_ORDERS: PurchaseOrder[] = [
   {
     id: 'PO-003',
     supplierId: 'sup-3',
-    date: '2026-05-22',
+    date: Clock.offsetDaysString(-8),
     status: 'received',
     items: [
       { itemId: '3', quantity: 1500, rate: 8 }
@@ -357,21 +358,21 @@ export const INITIAL_PURCHASE_ORDERS: PurchaseOrder[] = [
 ];
 
 export const INITIAL_ADJUSTMENTS: InventoryAdjustment[] = [
-  { id: 'ADJ-001', itemId: '1', warehouseId: 'wh-1', type: 'damage', quantity: -15, date: '2026-05-10', reason: 'Water damage during severe rain at Mumbai Main Warehouse', severity: 'Severe', disposition: 'Quarantined' },
-  { id: 'ADJ-002', itemId: '3', warehouseId: 'wh-2', type: 'damage', quantity: -50, date: '2026-05-14', reason: 'Pest infestation in secondary bin at Pune', severity: 'Total Loss', disposition: 'Scrapped' },
-  { id: 'ADJ-003', itemId: '4', warehouseId: 'wh-2', type: 'damage', quantity: -10, date: '2026-05-22', reason: 'Friction tear during inter-depot transit', severity: 'Minor', disposition: 'Sold at Discount' },
-  { id: 'ADJ-004', itemId: '2', warehouseId: 'wh-1', type: 'return', quantity: 20, date: '2026-05-25', reason: 'Unused thread spool core return' }
+  { id: 'ADJ-001', itemId: '1', warehouseId: 'wh-1', type: 'damage', quantity: -15, date: Clock.offsetDaysString(-20), reason: 'Water damage during severe rain at Mumbai Main Warehouse', severity: 'Severe', disposition: 'Quarantined' },
+  { id: 'ADJ-002', itemId: '3', warehouseId: 'wh-2', type: 'damage', quantity: -50, date: Clock.offsetDaysString(-16), reason: 'Pest infestation in secondary bin at Pune', severity: 'Total Loss', disposition: 'Scrapped' },
+  { id: 'ADJ-003', itemId: '4', warehouseId: 'wh-2', type: 'damage', quantity: -10, date: Clock.offsetDaysString(-8), reason: 'Friction tear during inter-depot transit', severity: 'Minor', disposition: 'Sold at Discount' },
+  { id: 'ADJ-004', itemId: '2', warehouseId: 'wh-1', type: 'return', quantity: 20, date: Clock.offsetDaysString(-5), reason: 'Unused thread spool core return' }
 ];
 
 export const INITIAL_EWAY_BILLS: EwayBill[] = [
   {
     id: 'EWB-001',
     ewbNo: '101928374650',
-    ewbDate: '2026-05-27T10:00:00.000Z',
-    validUpto: '2026-05-29T23:59:59.000Z',
+    ewbDate: Clock.offsetDays(-2).toISOString(),
+    validUpto: Clock.offsetDays(1).toISOString(),
     docType: 'CHL',
     docNo: 'CHL-AWB-109038',
-    docDate: '2026-05-27',
+    docDate: Clock.offsetDaysString(-2),
     documentRefId: 'TRF-002',
     documentRefType: 'transfer',
     status: 'ACT',

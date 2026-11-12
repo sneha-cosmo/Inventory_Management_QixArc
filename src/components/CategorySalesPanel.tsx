@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Clock } from '../rules/clock';
 import { 
   FolderLock, 
   Sparkles, 
@@ -61,15 +62,18 @@ export default function CategorySalesPanel({
 
   // 1. Date filter function to filter SalesOrders matching chosen period
   const filteredOrders = useMemo(() => {
-    const currentYearPrefix = '2026';
-    const currentMonthPrefix = '2026-05';
+    const now = Clock.getCurrentDate();
+    const currentYearPrefix = String(now.getFullYear());
+    const currentMonthPrefix = Clock.getCurrentYearMonth();
+    const thirtyDaysAgo = Clock.offsetDays(-30);
     
     return salesOrders.filter(so => {
       if (periodFilter === 'last30') {
-        return so.date.startsWith(currentMonthPrefix) || so.date.startsWith('2024-05');
+        const orderDate = new Date(so.date);
+        return orderDate >= thirtyDaysAgo || so.date.startsWith(currentMonthPrefix);
       }
       if (periodFilter === 'ytd') {
-        return so.date.startsWith(currentYearPrefix) || so.date.startsWith('2024');
+        return so.date.startsWith(currentYearPrefix);
       }
       return true; // Use 'all'
     });

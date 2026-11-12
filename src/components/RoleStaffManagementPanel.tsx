@@ -48,6 +48,15 @@ import {
   Legend
 } from 'recharts';
 import { Staff } from '../types';
+import { 
+  can, 
+  getUserPermissionSwitch, 
+  setUserPermissionSwitch, 
+  getRoleDefaultSwitches,
+  normalizeRole,
+  CANONICAL_ROLES,
+  ROLE_DISPLAY_NAMES 
+} from '../rules/permissions';
 
 interface RoleStaffManagementPanelProps {
   staff: Staff[];
@@ -58,39 +67,39 @@ interface RoleStaffManagementPanelProps {
   onSimulateSwitchUser?: (staffId: string) => void; // allow quick emulator switch
 }
 
-// Group definitions for clear visual layout of Permissions
+// 9-switch permissions matrix layout as defined by system specification
 const PERMISSION_GROUPS = [
   {
     category: 'Inventory & Operations',
-    description: 'Control core physical assets and batch lifecycles',
+    description: 'Control core physical assets, warehouses, and batch lifecycles',
     perms: [
       { key: 'editInventory', label: 'Modify Catalog', desc: 'Add, archive, edit items, pricing & raw parameters' },
-      { key: 'manageBatches', label: 'Configure Batches', desc: 'Initiate or complete production batches, assign warehouse layouts' }
+      { key: 'manageBatches', label: 'Configure Batches', desc: 'Initiate or complete production batches, lot assignments' },
+      { key: 'manageWarehouses', label: 'Manage Warehouses', desc: 'Manage warehouse facilities, branch transfers & sync' }
     ]
   },
   {
     category: 'Audit & High Security',
-    description: 'Execute sensitive accounting adjustments or critical lot recalls',
+    description: 'Execute sensitive accounting adjustments, recalls, or log resets',
     perms: [
       { key: 'makeAdjustments', label: 'Manual Adjust Stock', desc: 'Perform manual stock level write-offs or audits' },
-      { key: 'executeRecall', label: 'Perform Lot Recalls', desc: 'Trigger absolute system-wide recalls on expired or contaminated batches' }
+      { key: 'deleteAuditLogs', label: 'Delete Audit Logs', desc: 'Purge or factory reset audit history (Super Admin only)' }
     ]
   },
   {
-    category: 'Suppliers & Sales Billing',
-    description: 'Log vendor relationships and process purchase ledger contracts',
+    category: 'Orders & Sales Billing',
+    description: 'Log procurement purchase orders and process sales order shipments',
     perms: [
-      { key: 'manageSuppliers', label: 'Manage Supplier base', desc: 'Onboard and manage suppliers and GST compliance flags' },
-      { key: 'createOrders', label: 'Issue Orders & Invoices', desc: 'Generate B2B invoices and log incoming raw product POs' }
+      { key: 'createOrders', label: 'Issue Orders & Invoices', desc: 'Generate B2B invoices, POs, and sales dispatches' }
     ]
   },
   {
     category: 'Finance & Administration',
-    description: 'Access financial balance ledgers, record payments, and manage staff credentials',
+    description: 'Access financial balance ledgers, reports, and staff administration',
     perms: [
-      { key: 'recordPayments', label: 'Financial PMT Logs', desc: 'Record credit/debit payments, edit payment statuses' },
-      { key: 'viewReports', label: 'Inspect GST & Taxes', desc: 'Access active reports, GSTR-1 draft sheets and PL dashboards' },
-      { key: 'manageStaff', label: 'Admin Security credentials', desc: 'Promote employee roles, revise direct access credentials, onboard profiles' }
+      { key: 'viewFinancials', label: 'Financial Ledgers', desc: 'Access financial ledgers, margins, and valuations' },
+      { key: 'generateReports', label: 'Reports & Tax Filing', desc: 'Inspect GST reports, GSTR-1 summaries, and Tally export' },
+      { key: 'manageStaff', label: 'Staff Roles & Access', desc: 'Administer employee roles and credentials' }
     ]
   }
 ];
@@ -108,14 +117,14 @@ export default function RoleStaffManagementPanel({
   // Navigation & filter states
   const [activeTab, setActiveTab] = useState<'roster' | 'matrix' | 'emulator' | 'templates'>('roster');
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'inventory_manager' | 'billing_clerk' | 'staff_viewer'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'inventory_manager' | 'billing_clerk' | 'production_supervisor' | 'viewer'>('all');
   
   // Create staff dialog triggers
   const [openAddStaff, setOpenAddStaff] = useState(false);
   const [newStaff, setNewStaff] = useState({
     name: '',
     email: '',
-    role: 'staff_viewer' as Staff['role']
+    role: 'viewer' as Staff['role']
   });
 
   // Emulator interactive tool variables
@@ -157,85 +166,28 @@ export default function RoleStaffManagementPanel({
     );
 
     // Reset onboarding form
-    setNewStaff({ name: '', email: '', role: 'staff_viewer' });
+    setNewStaff({ name: '', email: '', role: 'viewer' });
     setOpenAddStaff(false);
   };
 
   // Helper template config maps
-  function getRoleDefaults(role: Staff['role']): Staff['permissions'] {
-    switch (role) {
-      case 'admin':
-        return {
-          editInventory: true,
-          manageBatches: true,
-          makeAdjustments: true,
-          executeRecall: true,
-          manageSuppliers: true,
-          createOrders: true,
-          recordPayments: true,
-          viewReports: true,
-          manageStaff: true
-        };
-      case 'inventory_manager':
-        return {
-          editInventory: true,
-          manageBatches: true,
-          makeAdjustments: true,
-          executeRecall: true,
-          manageSuppliers: true,
-          createOrders: false,
-          recordPayments: false,
-          viewReports: false,
-          manageStaff: false
-        };
-      case 'billing_clerk':
-        return {
-          editInventory: false,
-          manageBatches: false,
-          makeAdjustments: false,
-          executeRecall: false,
-          manageSuppliers: false,
-          createOrders: true,
-          recordPayments: true,
-          viewReports: true,
-          manageStaff: false
-        };
-      case 'staff_viewer':
-      default:
-        return {
-          editInventory: false,
-          manageBatches: false,
-          makeAdjustments: false,
-          executeRecall: false,
-          manageSuppliers: false,
-          createOrders: false,
-          recordPayments: false,
-          viewReports: true,
-          manageStaff: false
-        };
-    }
+  function getRoleDefaults(role: string): Staff['permissions'] {
+    return getRoleDefaultSwitches(role) as Staff['permissions'];
   }
 
   // Handle direct custom check toggle
-  const handleToggleSpecificPermission = (staffId: string, permKey: keyof Staff['permissions']) => {
+  const handleToggleSpecificPermission = (staffId: string, permKey: string) => {
     const target = staff.find(s => s.id === staffId);
     if (!target) return;
 
     if (target.role === 'admin') {
-      alert("Admin security guidelines prevent modifying base master credentials. Revoke or promote role representation first.");
       return;
     }
 
-    const nextValue = !target.permissions[permKey];
+    const nextValue = !getUserPermissionSwitch(target, permKey);
     const updated = staff.map(s => {
       if (s.id === staffId) {
-        return {
-          ...s,
-          permissions: {
-            ...s.permissions,
-            [permKey]: nextValue
-          }
-        };
+        return setUserPermissionSwitch(s, permKey, nextValue);
       }
       return s;
     });
@@ -278,7 +230,7 @@ export default function RoleStaffManagementPanel({
   // Reset entire role cohort to template values
   const handleBulkResetRoleTemplates = (role: Staff['role']) => {
     const updated = staff.map(s => {
-      if (s.role === role) {
+      if (normalizeRole(s.role) === normalizeRole(role)) {
         return {
           ...s,
           permissions: getRoleDefaults(role)
@@ -323,7 +275,7 @@ export default function RoleStaffManagementPanel({
   const filteredRoster = useMemo(() => {
     return staff.filter(s => {
       const matchSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.email.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchRole = roleFilter === 'all' ? true : s.role === roleFilter;
+      const matchRole = roleFilter === 'all' ? true : normalizeRole(s.role) === normalizeRole(roleFilter);
       return matchSearch && matchRole;
     });
   }, [staff, searchQuery, roleFilter]);
@@ -344,9 +296,8 @@ export default function RoleStaffManagementPanel({
 
     staff.forEach(s => {
       Object.keys(sum).forEach(k => {
-        const key = k as keyof typeof sum;
-        if (s.permissions[key]) {
-          sum[key]++;
+        if (getUserPermissionSwitch(s, k)) {
+          sum[k as keyof typeof sum]++;
         }
       });
     });
@@ -365,17 +316,19 @@ export default function RoleStaffManagementPanel({
   }, [staff]);
 
   const cohortStatsCount = useMemo(() => {
-    const roles = { admin: 0, inventory_manager: 0, billing_clerk: 0, staff_viewer: 0 };
+    const roles: Record<string, number> = { admin: 0, inventory_manager: 0, billing_clerk: 0, production_supervisor: 0, viewer: 0 };
     staff.forEach(s => {
-      if (roles[s.role] !== undefined) {
-        roles[s.role]++;
+      const canonical = normalizeRole(s.role);
+      if (roles[canonical] !== undefined) {
+        roles[canonical]++;
       }
     });
     return [
       { name: 'Admin', value: roles.admin, color: '#4F46E5' },
       { name: 'Inventory Manager', value: roles.inventory_manager, color: '#10B981' },
       { name: 'Billing Clerk', value: roles.billing_clerk, color: '#F59E0B' },
-      { name: 'Staff Viewer', value: roles.staff_viewer, color: '#EF4444' }
+      { name: 'Production Supervisor', value: roles.production_supervisor, color: '#8B5CF6' },
+      { name: 'Staff Viewer', value: roles.viewer, color: '#EF4444' }
     ];
   }, [staff]);
 
@@ -445,10 +398,11 @@ export default function RoleStaffManagementPanel({
                       value={newStaff.role}
                       onChange={e => setNewStaff({...newStaff, role: e.target.value as Staff['role']})}
                     >
-                      <option value="admin">Admin Roles (Unrestricted Core Privileges)</option>
+                      <option value="admin">Super Admin (Unrestricted Core Privileges)</option>
                       <option value="inventory_manager">Inventory Manager (Stock Levels & Batches)</option>
-                      <option value="billing_clerk">Billing/Invoice Clerical Associate</option>
-                      <option value="staff_viewer">Staff Viewer (Restricted Read-Only Analytics)</option>
+                      <option value="billing_clerk">Billing Clerk (Invoices, Customers, Payments)</option>
+                      <option value="production_supervisor">Production Supervisor (Plans & Consumption)</option>
+                      <option value="viewer">Staff Viewer (Restricted Read-Only Analytics)</option>
                     </select>
                   </div>
                 </div>
@@ -612,7 +566,8 @@ export default function RoleStaffManagementPanel({
                       <option value="admin">Admins</option>
                       <option value="inventory_manager">Managers</option>
                       <option value="billing_clerk">Billing Clerks</option>
-                      <option value="staff_viewer">Viewers</option>
+                      <option value="production_supervisor">Production Supervisors</option>
+                      <option value="viewer">Viewers</option>
                     </select>
                   </div>
                 </div>
@@ -643,10 +598,12 @@ export default function RoleStaffManagementPanel({
                           ? 'bg-emerald-50 text-emerald-800 border-emerald-100'
                           : s.role === 'billing_clerk'
                           ? 'bg-amber-50 text-amber-800 border-amber-100'
+                          : s.role === 'production_supervisor'
+                          ? 'bg-purple-50 text-purple-800 border-purple-100'
                           : 'bg-rose-50 text-rose-800 border-rose-100';
 
                         // Count active security keys
-                        const activePermsCount = Object.values(s.permissions).filter(Boolean).length;
+                        const activePermsCount = PERMISSION_GROUPS.flatMap(g => g.perms).filter(p => getUserPermissionSwitch(s, p.key)).length;
 
                         return (
                           <TableRow key={s.id} className="hover:bg-slate-50/15 text-xs text-slate-650">
@@ -680,7 +637,8 @@ export default function RoleStaffManagementPanel({
                                 <option value="admin">Super Admin</option>
                                 <option value="inventory_manager">Inventory Manager</option>
                                 <option value="billing_clerk">Billing Clerk</option>
-                                <option value="staff_viewer">Staff Viewer</option>
+                                <option value="production_supervisor">Production Supervisor</option>
+                                <option value="viewer">Staff Viewer</option>
                               </select>
                             </TableCell>
 
@@ -688,7 +646,7 @@ export default function RoleStaffManagementPanel({
                             <TableCell>
                               <div className="flex items-center gap-1.5">
                                 <Badge className={`font-black text-[10px] ${activePermsCount >= 7 ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                  {activePermsCount} of 9 Gateways
+                                  {activePermsCount} of {PERMISSION_GROUPS.flatMap(g => g.perms).length} Gateways
                                 </Badge>
                               </div>
                             </TableCell>
@@ -825,7 +783,7 @@ export default function RoleStaffManagementPanel({
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {grp.perms.map(p => {
-                              const hasPerm = focusedStaff.permissions[p.key as keyof Staff['permissions']];
+                              const hasPerm = getUserPermissionSwitch(focusedStaff, p.key);
                               return (
                                 <div 
                                   key={p.key} 
@@ -913,14 +871,17 @@ export default function RoleStaffManagementPanel({
                 <div className="border-t border-indigo-100 pt-3 space-y-2">
                   <div className="text-[10px] font-black text-indigo-800 uppercase">ACTIVE SESSION GATES:</div>
                   <div className="space-y-1.5">
-                    {emulatedStaff && Object.entries(emulatedStaff.permissions).map(([k, v]) => (
-                      <div key={k} className="flex justify-between items-center text-[10px]">
-                        <span className="text-slate-500 font-mono capitalize">{k.replace(/([A-Z])/g, ' $1')}:</span>
-                        <span className={`font-black uppercase text-[8px] px-1.5 py-0.5 rounded-sm ${v ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>
-                          {v ? 'Allowed' : 'Blocked'}
-                        </span>
-                      </div>
-                    ))}
+                    {emulatedStaff && PERMISSION_GROUPS.flatMap(g => g.perms).map(p => {
+                      const allowed = getUserPermissionSwitch(emulatedStaff, p.key);
+                      return (
+                        <div key={p.key} className="flex justify-between items-center text-[10px]">
+                          <span className="text-slate-500 font-mono capitalize">{p.label}:</span>
+                          <span className={`font-black uppercase text-[8px] px-1.5 py-0.5 rounded-sm ${allowed ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>
+                            {allowed ? 'Allowed' : 'Blocked'}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -961,8 +922,8 @@ export default function RoleStaffManagementPanel({
                     <div className="border border-slate-100 rounded-3xl p-4 bg-slate-50/40 space-y-3 relative overflow-hidden">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-slate-800">1. Raw Materials & Yarn Catalog Page</span>
-                        <Badge className={emulatedStaff.permissions.editInventory ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800'}>
-                          {emulatedStaff.permissions.editInventory ? 'UNLOCKED' : 'LOCKED'}
+                        <Badge className={can(emulatedStaff, 'editInventory') ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800'}>
+                          {can(emulatedStaff, 'editInventory') ? 'UNLOCKED' : 'LOCKED'}
                         </Badge>
                       </div>
                       <p className="text-[10px] text-slate-450 leading-normal font-semibold">
@@ -970,7 +931,7 @@ export default function RoleStaffManagementPanel({
                       </p>
                       <div className="bg-white border rounded-xl p-3 flex justify-between items-center text-[10px]">
                         <span className="text-slate-400 font-bold">"Add Product" Button:</span>
-                        {emulatedStaff.permissions.editInventory ? (
+                        {can(emulatedStaff, 'editInventory') ? (
                           <span className="text-emerald-600 font-bold flex items-center gap-0.5">● Ready & Tapable</span>
                         ) : (
                           <span className="text-rose-500 font-bold flex items-center gap-0.5"><Lock className="w-3 h-3" /> Blocked & Greyed out</span>
@@ -982,8 +943,8 @@ export default function RoleStaffManagementPanel({
                     <div className="border border-slate-100 rounded-3xl p-4 bg-slate-50/40 space-y-3 relative overflow-hidden">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-slate-800">2. Manufacturing Batch Logs Page</span>
-                        <Badge className={emulatedStaff.permissions.manageBatches ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800'}>
-                          {emulatedStaff.permissions.manageBatches ? 'UNLOCKED' : 'LOCKED'}
+                        <Badge className={can(emulatedStaff, 'manageBatches') ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800'}>
+                          {can(emulatedStaff, 'manageBatches') ? 'UNLOCKED' : 'LOCKED'}
                         </Badge>
                       </div>
                       <p className="text-[10px] text-slate-450 leading-normal font-semibold">
@@ -991,7 +952,7 @@ export default function RoleStaffManagementPanel({
                       </p>
                       <div className="bg-white border rounded-xl p-3 flex justify-between items-center text-[10px]">
                         <span className="text-slate-400 font-bold">"Generate Manufacturing Batch" Actions:</span>
-                        {emulatedStaff.permissions.manageBatches ? (
+                        {can(emulatedStaff, 'manageBatches') ? (
                           <span className="text-emerald-600 font-bold flex items-center gap-0.5">● Ready & Tapable</span>
                         ) : (
                           <span className="text-rose-500 font-bold flex items-center gap-0.5"><Lock className="w-3 h-3" /> Blocked & Greyed out</span>
@@ -1003,8 +964,8 @@ export default function RoleStaffManagementPanel({
                     <div className="border border-slate-100 rounded-3xl p-4 bg-slate-50/40 space-y-3 relative overflow-hidden">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-slate-800">3. Stock Audits & Manual Adjusts</span>
-                        <Badge className={emulatedStaff.permissions.makeAdjustments ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800'}>
-                          {emulatedStaff.permissions.makeAdjustments ? 'UNLOCKED' : 'LOCKED'}
+                        <Badge className={can(emulatedStaff, 'makeAdjustments') ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800'}>
+                          {can(emulatedStaff, 'makeAdjustments') ? 'UNLOCKED' : 'LOCKED'}
                         </Badge>
                       </div>
                       <p className="text-[10px] text-slate-450 leading-normal font-semibold">
@@ -1012,7 +973,7 @@ export default function RoleStaffManagementPanel({
                       </p>
                       <div className="bg-white border rounded-xl p-3 flex justify-between items-center text-[10px]">
                         <span className="text-slate-400 font-bold">"Register Stock Shortage" Trigger:</span>
-                        {emulatedStaff.permissions.makeAdjustments ? (
+                        {can(emulatedStaff, 'makeAdjustments') ? (
                           <span className="text-emerald-600 font-bold flex items-center gap-0.5">● Ready & Tapable</span>
                         ) : (
                           <span className="text-rose-500 font-bold flex items-center gap-0.5"><Lock className="w-3 h-3" /> Blocked & Greyed out</span>
@@ -1024,8 +985,8 @@ export default function RoleStaffManagementPanel({
                     <div className="border border-slate-100 rounded-3xl p-4 bg-slate-50/40 space-y-3 relative overflow-hidden">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-slate-800">4. Batch Recall Management Logs</span>
-                        <Badge className={emulatedStaff.permissions.executeRecall ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800'}>
-                          {emulatedStaff.permissions.executeRecall ? 'UNLOCKED' : 'LOCKED'}
+                        <Badge className={can(emulatedStaff, 'executeRecall') ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-rose-50 text-rose-800'}>
+                          {can(emulatedStaff, 'executeRecall') ? 'UNLOCKED' : 'LOCKED'}
                         </Badge>
                       </div>
                       <p className="text-[10px] text-slate-450 leading-normal font-semibold">
@@ -1033,7 +994,7 @@ export default function RoleStaffManagementPanel({
                       </p>
                       <div className="bg-white border rounded-xl p-3 flex justify-between items-center text-[10px]">
                         <span className="text-slate-400 font-bold">"Decommission Contaminated Batch":</span>
-                        {emulatedStaff.permissions.executeRecall ? (
+                        {can(emulatedStaff, 'executeRecall') ? (
                           <span className="text-emerald-600 font-bold flex items-center gap-0.5">● Ready & Tapable</span>
                         ) : (
                           <span className="text-rose-500 font-bold flex items-center gap-0.5"><Lock className="w-3 h-3" /> Blocked & Greyed out</span>
@@ -1153,7 +1114,7 @@ export default function RoleStaffManagementPanel({
                 </div>
 
                 <Button 
-                  onClick={() => handleBulkResetRoleTemplates('staff_viewer')}
+                  onClick={() => handleBulkResetRoleTemplates('viewer')}
                   className="w-full bg-slate-900 text-white rounded-xl text-xs h-9 font-bold mt-4"
                 >
                   Apply Cohort Template Sync

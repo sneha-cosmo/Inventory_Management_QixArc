@@ -44,9 +44,10 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { InventoryItem, InventoryAdjustment, Warehouse, Category, SalesOrder, ProductionOrder, PurchaseOrder } from '../types';
+import { InventoryItem, InventoryAdjustment, Warehouse, Category, SalesOrder, ProductionOrder, PurchaseOrder, Staff } from '../types';
 import { Clock } from '../rules/clock';
 import { classifyStockAging, isDeadStock } from '../rules/aging';
+import { can, getPermissionDeniedTooltip } from '../rules/permissions';
 
 interface DeadStockDamagedPageProps {
   inventory: InventoryItem[];
@@ -58,6 +59,7 @@ interface DeadStockDamagedPageProps {
   purchaseOrders: PurchaseOrder[];
   onAddAdjustment: (adj: InventoryAdjustment) => void;
   onUpdateAdjustmentDisposition?: (adjId: string, disposition: InventoryAdjustment['disposition'], additionalQtyChange?: number) => void;
+  currentUser?: Staff;
 }
 
 export default function DeadStockDamagedPage({
@@ -69,13 +71,18 @@ export default function DeadStockDamagedPage({
   orders,
   purchaseOrders,
   onAddAdjustment,
-  onUpdateAdjustmentDisposition
+  onUpdateAdjustmentDisposition,
+  currentUser
 }: DeadStockDamagedPageProps) {
   const [activeTab, setActiveTab] = useState<'dead' | 'damaged'>('dead');
   const [deadAgeThreshold, setDeadAgeThreshold] = useState<number>(60); // in days
   const [searchQuery, setSearchQuery] = useState('');
   const [openDamageDialog, setOpenDamageDialog] = useState(false);
   const [selectedWarehouseFilter, setSelectedWarehouseFilter] = useState<string>('all');
+  const canLogDamage = can(currentUser, 'makeAdjustments');
+  const damageTooltip = getPermissionDeniedTooltip('makeAdjustments', 'en');
+  const canManageDead = can(currentUser, 'makeAdjustments');
+  const deadTooltip = getPermissionDeniedTooltip('makeAdjustments', 'en');
   
   // Form State for logging damage
   const [damageForm, setDamageForm] = useState({
@@ -88,7 +95,7 @@ export default function DeadStockDamagedPage({
   });
 
   // Calculate generic cost price helper matching reports logic
-  const getItemCost = (itemId: string) => {
+  const getItemCost = React.useCallback((itemId: string) => {
     let defaultCost = 100;
     if (itemId === '1') defaultCost = 135;      // Fabric
     else if (itemId === '2') defaultCost = 55;   // Thread
@@ -105,7 +112,7 @@ export default function DeadStockDamagedPage({
     const avgPurchaseRate = totalPoQty > 0 ? (totalPoAmt / totalPoQty) : 0;
 
     return avgPurchaseRate || defaultCost;
-  };
+  }, [purchaseOrders]);
 
   // --- 1. Dead & Slow Stock Logic ---
   const lastMovementDates = useMemo(() => {
@@ -132,11 +139,11 @@ export default function DeadStockDamagedPage({
         allDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
         lastDate = allDates[0];
       } else {
-        // Mock dates representing varying lag for illustration
-        if (item.id === '4') lastDate = '2025-11-15'; // Golden Zari Lace (very old)
-        else if (item.id === '5') lastDate = '2026-01-20'; // Denim Roll (old)
-        else if (item.id === '6') lastDate = '2026-04-10'; // Rivets (slow moving)
-        else lastDate = '2026-05-10';
+        // Dynamic movement dates representing varying lag relative to Clock
+        if (item.id === '4') lastDate = Clock.offsetDaysString(-190); // Golden Zari Lace (very old)
+        else if (item.id === '5') lastDate = Clock.offsetDaysString(-130); // Denim Roll (old)
+        else if (item.id === '6') lastDate = Clock.offsetDaysString(-45); // Rivets (slow moving)
+        else lastDate = Clock.offsetDaysString(-18);
       }
       datesMap.set(item.id, lastDate);
     });
@@ -148,7 +155,7 @@ export default function DeadStockDamagedPage({
     const currentDate = Clock.getCurrentDate(); // Use central injectable clock
 
     return inventory.map(item => {
-      const lastDateStr = lastMovementDates.get(item.id) || '2026-05-01';
+      const lastDateStr = lastMovementDates.get(item.id) || Clock.offsetDaysString(-30);
       const lastDate = new Date(lastDateStr);
       const diffTime = Math.abs(currentDate.getTime() - lastDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -158,7 +165,7 @@ export default function DeadStockDamagedPage({
       // Carrying cost per month estimated at 1.8% of inventory asset value
       const monthlyCarryingCost = stockVal * 0.018;
 
-      let categoryName = categories.find(c => c.id === item.categoryId)?.name || 'Accessories';
+      const categoryName = categories.find(c => c.id === item.categoryId)?.name || 'Accessories';
 
       let status: 'dead' | 'slow' | 'healthy' = 'healthy';
       if (diffDays >= 60) {
@@ -187,7 +194,7 @@ export default function DeadStockDamagedPage({
       
       return matchesSearch;
     });
-  }, [inventory, lastMovementDates, categories, searchQuery, purchaseOrders]);
+  }, [inventory, lastMovementDates, categories, searchQuery, getItemCost]);
 
   // Split listing based on selected age threshold filter
   const itemsCategorizedByAge = useMemo(() => {
@@ -259,7 +266,7 @@ export default function DeadStockDamagedPage({
         hsn: item?.hsnCode || 'N/A'
       };
     });
-  }, [adjustments, inventory, warehouses, selectedWarehouseFilter, searchQuery, purchaseOrders]);
+  }, [adjustments, inventory, warehouses, selectedWarehouseFilter, searchQuery, getItemCost]);
 
   // Damaged Stock Metrics Summary
   const damagedMetrics = useMemo(() => {
@@ -293,6 +300,7 @@ export default function DeadStockDamagedPage({
 
   // Triggering Resolutions
   const handleDeadStockAction = (itemId: string, action: 'scrap' | 'discount' | 'return') => {
+    if (!canManageDead) return;
     const item = inventory.find(i => i.id === itemId);
     if (!item) return;
 
@@ -348,6 +356,7 @@ export default function DeadStockDamagedPage({
   };
 
   const handleUpdateDamageStatus = (adjId: string, newDisp: InventoryAdjustment['disposition']) => {
+    if (!canManageDead) return;
     if (onUpdateAdjustmentDisposition) {
       // If parent supports update
       onUpdateAdjustmentDisposition(adjId, newDisp);
@@ -360,6 +369,7 @@ export default function DeadStockDamagedPage({
 
   const handleDamageFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canLogDamage) return;
     const qtyNum = Number(damageForm.quantity);
     const item = inventory.find(i => i.id === damageForm.itemId);
     
@@ -704,10 +714,21 @@ export default function DeadStockDamagedPage({
           <div className="flex justify-between items-center bg-white border border-gray-205 p-3 rounded-2xl">
             <h4 className="text-xs font-bold text-slate-700 pl-2 uppercase tracking-wide">Logistical Damage Controls</h4>
             {/* Log damage dialog button trigger */}
-            <Dialog open={openDamageDialog} onOpenChange={setOpenDamageDialog}>
-              <DialogTrigger render={<Button className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs py-1.5 px-3 h-8 shadow" />}>
-                <PlusCircle className="w-4 h-4 mr-1.5" /> Log New Damage Incident
-              </DialogTrigger>
+            <Dialog open={openDamageDialog && canLogDamage} onOpenChange={(val) => { if (canLogDamage) setOpenDamageDialog(val); }}>
+              {canLogDamage ? (
+                <DialogTrigger render={<Button className="bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs py-1.5 px-3 h-8 shadow" />}>
+                  <PlusCircle className="w-4 h-4 mr-1.5" /> Log New Damage Incident
+                </DialogTrigger>
+              ) : (
+                <div className="relative group inline-block" title={damageTooltip}>
+                  <Button disabled className="bg-rose-600 opacity-60 cursor-not-allowed text-white font-bold rounded-xl text-xs py-1.5 px-3 h-8 shadow">
+                    <PlusCircle className="w-4 h-4 mr-1.5" /> Log New Damage Incident
+                  </Button>
+                  <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+                    {damageTooltip}
+                  </div>
+                </div>
+              )}
               <DialogContent className="max-w-md bg-white">
                 <form onSubmit={handleDamageFormSubmit}>
                   <DialogHeader>

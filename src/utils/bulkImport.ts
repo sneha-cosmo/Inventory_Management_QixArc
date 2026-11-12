@@ -421,7 +421,7 @@ export function validateBulkImportRows(
     }
 
     // 5. HSN/SAC validation
-    let finalHsn: string | undefined = rawHsn ? rawHsn.trim() : undefined;
+    const finalHsn: string | undefined = rawHsn ? rawHsn.trim() : undefined;
     if (finalHsn) {
       const hsnRes = validateHsnCode(finalHsn, taxSettings);
       if (!hsnRes.valid) {
@@ -815,6 +815,9 @@ export function generateSampleErrorsCsv(): string {
     'Description',
     'Category',
     'Unit',
+    'HSN/SAC',
+    'GST Rate (%)',
+    'UQC',
     'Unit Cost',
     'Selling Price',
     'Current Stock',

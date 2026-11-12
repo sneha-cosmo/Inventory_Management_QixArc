@@ -60,7 +60,7 @@ export default function FifoValuationPanel({
   ]);
 
   // Combined cost rates mapper
-  const getItemCostRate = (itemId: string): number => {
+  const getItemCostRate = React.useCallback((itemId: string): number => {
     // 1. check override
     if (costOverrides[itemId] !== undefined) {
       return costOverrides[itemId];
@@ -73,7 +73,7 @@ export default function FifoValuationPanel({
     }
     // 3. check default fallback pricing
     return DEFAULT_ITEM_COST_RATES[itemId] || 100;
-  };
+  }, [costOverrides, purchaseOrders]);
 
   const handleUpdateItemCost = (itemId: string, rate: number) => {
     setCostOverrides(prev => ({
@@ -154,7 +154,7 @@ export default function FifoValuationPanel({
         }))
       };
     });
-  }, [inventory, batches, purchaseOrders, costOverrides]);
+  }, [inventory, batches, getItemCostRate]);
 
   // Overall Financial stats
   const aggregateStats = useMemo(() => {

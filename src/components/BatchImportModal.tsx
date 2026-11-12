@@ -53,9 +53,11 @@ import {
   generateBatchErrorsCsv,
   SkuReconciliationRow
 } from '../utils/batchImport';
+import { Clock as DomainClock } from '../rules/clock';
 import { autoMatchColumns, processImportInChunks } from '../utils/bulkImport';
 import { Batch, InventoryItem, Warehouse, Staff } from '../types';
 import { Language, LOCALES } from '../locales';
+import { can } from '../rules/permissions';
 
 interface BatchImportModalProps {
   open: boolean;
@@ -98,7 +100,7 @@ export default function BatchImportModal({
   const t = LOCALES[language];
 
   // Re-verify authorization
-  const isAuthorized = currentUser.role === 'admin' || currentUser.role === 'inventory_manager';
+  const isAuthorized = can(currentUser, 'manageBatches');
 
   // 4 steps
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
@@ -376,7 +378,6 @@ export default function BatchImportModal({
   // Execute import
   const handleExecuteImport = async () => {
     if (!isAuthorized) {
-      alert(t.permissionDeniedBatchImport);
       return;
     }
 
@@ -453,7 +454,7 @@ export default function BatchImportModal({
             batchNumber: row.data.batchNumber,
             warehouseId: resolvedWhId,
             quantity: row.data.quantity,
-            manufactureDate: row.data.manufactureDate || '2026-05-26',
+            manufactureDate: row.data.manufactureDate || DomainClock.getCurrentDateString(),
             expiryDate: row.data.expiryDate
           };
 

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Clock } from '../rules/clock';
 import { 
   TrendingUp, 
   Sparkles, 
@@ -66,8 +67,8 @@ export default function SalesForecastingPanel({
     // We group sales from existing sales orders
     const monthsGroup: Record<string, { revenue: number; volume: number }> = {};
 
-    // Seed default baseline historic months (e.g., Dec 2025 - May 2026) to make the telemetry look gorgeous!
-    const baselineMonths = ['2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
+    // Dynamic baseline historic months relative to Clock
+    const baselineMonths = Clock.getRecentMonths(6).map(m => m.key);
     baselineMonths.forEach(m => {
       // Seed realistic starting points if no data is found
       monthsGroup[m] = { revenue: 0, volume: 0 };
@@ -222,7 +223,7 @@ export default function SalesForecastingPanel({
     }
 
     return predictedList;
-  }, [monthlyActuals, method, demandBoost, priceInflation, macroClimate, forecastHorizon, selectedItemId]);
+  }, [monthlyActuals, method, demandBoost, priceInflation, macroClimate, forecastHorizon]);
 
   // Merge historic items + predict items for seamless dual timeline chart
   const combinedTimelineData = useMemo(() => {

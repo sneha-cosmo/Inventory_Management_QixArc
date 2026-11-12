@@ -23,15 +23,17 @@ export const BATCH_TARGET_FIELDS: BatchTargetFieldDef[] = [
   { key: 'batchId', label: 'Batch ID', required: false, type: 'string', aliases: ['batchid', 'batch_id', 'id', 'system_id'] }
 ];
 
+import { Clock } from '../rules/clock';
+
 /**
- * Standard reference date matching existing application state context (2026-05-26).
+ * Standard reference date obtained from central Clock.
  */
-export const APP_REFERENCE_DATE = new Date('2026-05-26');
+export const APP_REFERENCE_DATE = Clock.getCurrentDate();
 
 /**
  * Expiry status calculator using the exact existing application business rules.
  */
-export function calculateExpiryStatus(expiryDateStr: string, referenceDate: Date = APP_REFERENCE_DATE): {
+export function calculateExpiryStatus(expiryDateStr: string, referenceDate: Date = Clock.getCurrentDate()): {
   diffDays: number;
   status: ExpiryStatus;
   statusLabel: string;
@@ -561,14 +563,19 @@ export function generateBatchCsvTemplate(): string {
     'Batch ID'
   ];
 
+  const sampleMfg1 = Clock.offsetDaysString(-120);
+  const sampleExp1 = Clock.offsetDaysString(240);
+  const sampleMfg2 = Clock.offsetDaysString(-90);
+  const sampleExp2 = Clock.offsetDaysString(270);
+
   const exampleRows = [
     [
       'BAT-COT-26D',
       'FAB-COT-001',
       'Main Warehouse',
       '300',
-      '2026-01-15',
-      '2027-01-14',
+      sampleMfg1,
+      sampleExp1,
       ''
     ],
     [
@@ -576,8 +583,8 @@ export function generateBatchCsvTemplate(): string {
       'THR-POL-001',
       'Secondary Depot',
       '120',
-      '15/02/2026',
-      '14/02/2027',
+      sampleMfg2,
+      sampleExp2,
       ''
     ]
   ];

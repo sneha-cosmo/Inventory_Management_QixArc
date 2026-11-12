@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Clock } from '../rules/clock';
 import { 
   Receipt, 
   Download, 
@@ -48,11 +49,19 @@ export default function EasyTaxFilingPanel({
   language,
   addAuditLog
 }: EasyTaxFilingPanelProps) {
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('2026-10');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>(() => Clock.getCurrentYearMonth());
   const [activeSubTab, setActiveSubTab] = useState<'b2b' | 'b2c' | 'hsn' | 'itc' | 'summary'>('summary');
   const [searchQuery, setSearchQuery] = useState('');
   const [filingStatus, setFilingStatus] = useState<'draft' | 'validated' | 'filed'>('validated');
   const [showSuccessNotification, setShowSuccessNotification] = useState<string | null>(null);
+
+  const periodOptions = useMemo(() => {
+    const recent = Clock.getRecentMonths(6);
+    return recent.map((m, idx) => ({
+      value: m.key,
+      label: idx === recent.length - 1 ? `${m.label} (Active)` : m.label
+    }));
+  }, []);
 
   // Map customers and items by ID
   const customerMap = useMemo(() => new Map(customers.map(c => [c.id, c])), [customers]);
@@ -401,10 +410,9 @@ export default function EasyTaxFilingPanel({
               onChange={e => setSelectedPeriod(e.target.value)}
               className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer"
             >
-              <option value="2026-10">October 2026 (Active)</option>
-              <option value="2026-09">September 2026</option>
-              <option value="2026-08">August 2026</option>
-              <option value="2026-Q3">Q3 FY 2026-27</option>
+              {periodOptions.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
             </select>
           </div>
 

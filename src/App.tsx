@@ -159,8 +159,16 @@ import {
 import { classifyExpiry } from './rules/expiry';
 import { calculateCostVariance, formatCurrency } from './rules/valuation';
 import { calculateGst, TaxSettings, DEFAULT_TAX_SETTINGS } from './rules/tax';
-import { computeInvoiceStatus, validateInvoiceNumber } from './rules/invoice';
-import { hasPermission } from './rules/permissions';
+import { 
+  can, 
+  hasPermission, 
+  getPermissionDeniedTooltip, 
+  PermissionKey,
+  getUserPermissionSwitch,
+  setUserPermissionSwitch,
+  getRoleDefaultSwitches,
+  normalizeRole
+} from './rules/permissions';
 import { createAuditEvent } from './rules/audit';
 
 const INITIAL_BATCHES: Batch[] = [
@@ -168,8 +176,8 @@ const INITIAL_BATCHES: Batch[] = [
     id: 'BAT-001',
     itemId: '1',
     batchNumber: 'BAT-COT-26A',
-    manufactureDate: '2026-01-10',
-    expiryDate: '2026-06-01', // Critical warning (< 7 days)
+    manufactureDate: AppClock.offsetDaysString(-140),
+    expiryDate: AppClock.offsetDaysString(6), // Critical warning (< 7 days)
     quantity: 150,
     warehouseId: 'wh-1'
   },
@@ -177,8 +185,8 @@ const INITIAL_BATCHES: Batch[] = [
     id: 'BAT-002',
     itemId: '1',
     batchNumber: 'BAT-COT-26B',
-    manufactureDate: '2026-02-15',
-    expiryDate: '2026-06-10', // Near warning (< 15 days)
+    manufactureDate: AppClock.offsetDaysString(-100),
+    expiryDate: AppClock.offsetDaysString(14), // Near warning (< 15 days)
     quantity: 200,
     warehouseId: 'wh-1'
   },
@@ -186,8 +194,8 @@ const INITIAL_BATCHES: Batch[] = [
     id: 'BAT-003',
     itemId: '1',
     batchNumber: 'BAT-COT-26C',
-    manufactureDate: '2026-04-01',
-    expiryDate: '2026-12-05', // Healthy
+    manufactureDate: AppClock.offsetDaysString(-50),
+    expiryDate: AppClock.offsetDaysString(190), // Healthy
     quantity: 150,
     warehouseId: 'wh-2'
   },
@@ -195,8 +203,8 @@ const INITIAL_BATCHES: Batch[] = [
     id: 'BAT-004',
     itemId: '2',
     batchNumber: 'BAT-THR-26A',
-    manufactureDate: '2025-11-20',
-    expiryDate: '2026-05-12', // Expired
+    manufactureDate: AppClock.offsetDaysString(-190),
+    expiryDate: AppClock.offsetDaysString(-14), // Expired
     quantity: 30,
     warehouseId: 'wh-1'
   },
@@ -204,8 +212,8 @@ const INITIAL_BATCHES: Batch[] = [
     id: 'BAT-005',
     itemId: '2',
     batchNumber: 'BAT-THR-26B',
-    manufactureDate: '2026-03-01',
-    expiryDate: '2026-06-25', // Warning Warning (< 30 days)
+    manufactureDate: AppClock.offsetDaysString(-80),
+    expiryDate: AppClock.offsetDaysString(28), // Warning Warning (< 30 days)
     quantity: 50,
     warehouseId: 'wh-2'
   },
@@ -213,8 +221,8 @@ const INITIAL_BATCHES: Batch[] = [
     id: 'BAT-006',
     itemId: '3',
     batchNumber: 'BAT-BTN-26A',
-    manufactureDate: '2026-01-05',
-    expiryDate: '2026-07-20', // Healthy
+    manufactureDate: AppClock.offsetDaysString(-140),
+    expiryDate: AppClock.offsetDaysString(55), // Healthy
     quantity: 1200,
     warehouseId: 'wh-1'
   },
@@ -222,8 +230,8 @@ const INITIAL_BATCHES: Batch[] = [
     id: 'BAT-007',
     itemId: '3',
     batchNumber: 'BAT-BTN-26B',
-    manufactureDate: '2026-03-10',
-    expiryDate: '2027-03-10', // Healthy
+    manufactureDate: AppClock.offsetDaysString(-75),
+    expiryDate: AppClock.offsetDaysString(290), // Healthy
     quantity: 800,
     warehouseId: 'wh-2'
   }
@@ -235,7 +243,7 @@ export const INITIAL_STAFF: Staff[] = [
     name: 'Sneha R.',
     email: 'snehar2007@gmail.com',
     role: 'admin',
-    lastActive: '2026-05-28 17:15',
+    lastActive: AppClock.offsetDaysString(0) + ' 17:15',
     permissions: {
       editInventory: true,
       manageBatches: true,
@@ -253,16 +261,16 @@ export const INITIAL_STAFF: Staff[] = [
     name: 'Amit Sharma',
     email: 'amit.inventory@company.com',
     role: 'inventory_manager',
-    lastActive: '2026-05-28 16:30',
+    lastActive: AppClock.offsetDaysString(0) + ' 16:30',
     permissions: {
       editInventory: true,
       manageBatches: true,
       makeAdjustments: true,
       executeRecall: true,
       manageSuppliers: true,
-      createOrders: false,
+      createOrders: true,
       recordPayments: false,
-      viewReports: false,
+      viewReports: true,
       manageStaff: false
     }
   },
@@ -271,7 +279,7 @@ export const INITIAL_STAFF: Staff[] = [
     name: 'Priya Patel',
     email: 'priya.billing@company.com',
     role: 'billing_clerk',
-    lastActive: '2026-05-28 17:01',
+    lastActive: AppClock.offsetDaysString(0) + ' 17:01',
     permissions: {
       editInventory: false,
       manageBatches: false,
@@ -288,8 +296,8 @@ export const INITIAL_STAFF: Staff[] = [
     id: 'STF-004',
     name: 'Rohan Das',
     email: 'rohan.viewer@company.com',
-    role: 'staff_viewer',
-    lastActive: '2026-05-27 11:20',
+    role: 'viewer',
+    lastActive: AppClock.offsetDaysString(-1) + ' 11:20',
     permissions: {
       editInventory: false,
       manageBatches: false,
@@ -307,18 +315,18 @@ export const INITIAL_STAFF: Staff[] = [
 export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   {
     id: 'LOG-1',
-    timestamp: '2026-05-28T17:15:00.000Z',
+    timestamp: AppClock.offsetDays(-1).toISOString(),
     action: 'Create Sales Order',
     entityType: 'SalesOrder',
     entityId: 'SO-001',
-    details: 'SO created for customer Tech Solutions Ltd. GST Calculated: ₹14,500.00 (CGST+SGST). Invoice INV-2026-001 generated.',
+    details: 'SO created for customer Tech Solutions Ltd. GST Calculated: ₹14,500.00 (CGST+SGST). Invoice generated.',
     operatorId: 'STF-003',
     operatorName: 'Priya Patel',
     operatorRole: 'billing_clerk'
   },
   {
     id: 'LOG-2',
-    timestamp: '2026-05-28T16:45:00.000Z',
+    timestamp: AppClock.offsetDays(-1).toISOString(),
     action: 'Batch Recall',
     entityType: 'Batch',
     entityId: 'BAT-002',
@@ -329,7 +337,7 @@ export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   },
   {
     id: 'LOG-3',
-    timestamp: '2026-05-28T14:30:00.000Z',
+    timestamp: AppClock.offsetDays(-1).toISOString(),
     action: 'Inventory Adjustment',
     entityType: 'InventoryAdjustment',
     entityId: 'adj-1',
@@ -340,7 +348,7 @@ export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   },
   {
     id: 'LOG-4',
-    timestamp: '2026-05-27T11:20:00.000Z',
+    timestamp: AppClock.offsetDays(-2).toISOString(),
     action: 'Add Batch',
     entityType: 'Batch',
     entityId: 'BAT-005',
@@ -433,7 +441,7 @@ export default function App() {
       quantity: 50,
       sourceWarehouseId: 'wh-1',
       destWarehouseId: 'wh-2',
-      date: '2026-05-20',
+      date: AppClock.offsetDaysString(-8),
       status: 'received',
       trackingNumber: 'TRF-AWB-823901',
       carrier: 'Blue Dart India',
@@ -449,7 +457,7 @@ export default function App() {
       quantity: 100,
       sourceWarehouseId: 'wh-2',
       destWarehouseId: 'wh-1',
-      date: '2026-05-27',
+      date: AppClock.offsetDaysString(-1),
       status: 'transit',
       trackingNumber: 'TRF-AWB-109038',
       carrier: 'Delhivery Surface Logistics',
@@ -464,14 +472,14 @@ export default function App() {
   const [syncStatuses, setSyncStatuses] = useState<BranchSyncStatus[]>([
     {
       warehouseId: 'wh-1',
-      lastSyncedAt: '2026-05-29 02:15:00',
+      lastSyncedAt: AppClock.offsetDaysString(0) + ' 02:15:00',
       syncStatus: 'synced',
       unresolvedChangesCount: 0,
       latencyMs: 38
     },
     {
       warehouseId: 'wh-2',
-      lastSyncedAt: '2026-05-29 02:12:00',
+      lastSyncedAt: AppClock.offsetDaysString(0) + ' 02:12:00',
       syncStatus: 'synced',
       unresolvedChangesCount: 0,
       latencyMs: 45
@@ -584,8 +592,8 @@ export default function App() {
     }
   };
 
-  const checkPermission = (perm: keyof Staff['permissions']): boolean => {
-    return currentUser.permissions[perm];
+  const checkPermission = (perm: PermissionKey | keyof Staff['permissions']): boolean => {
+    return can(currentUser, perm as PermissionKey);
   };
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -667,6 +675,19 @@ export default function App() {
     setAuditLogs([newLog, ...auditLogs]);
   };
 
+  const checkActionPermission = (perm: PermissionKey, actionName: string): boolean => {
+    if (!can(currentUser, perm)) {
+      addAuditLog(
+        'Permission denied',
+        'Security',
+        actionName,
+        `Permission denied: User '${currentUser.name}' with role '${currentUser.role}' attempted unauthorized action '${actionName}' requiring '${perm}'.`
+      );
+      return false;
+    }
+    return true;
+  };
+
   // E-Way Bill Business Logic Handlers
   const handleGenerateEwbForInvoice = async (
     invoice: Invoice, 
@@ -679,6 +700,7 @@ export default function App() {
       approxDistanceKm: number;
     }
   ) => {
+    if (!checkActionPermission('generateEwayBill', 'Generate E-Way Bill')) return;
     try {
       const customer = customers.find(c => c.id === order.customerId);
       const defaultWh = warehouses[0]; // Dispatching warehouse
@@ -749,6 +771,7 @@ export default function App() {
       approxDistanceKm: number;
     }
   ) => {
+    if (!checkActionPermission('generateEwayBill', 'Generate E-Way Bill')) return;
     try {
       const sourceWh = warehouses.find(w => w.id === transfer.sourceWarehouseId) || warehouses[0];
       const destWh = warehouses.find(w => w.id === transfer.destWarehouseId) || warehouses[1];
@@ -846,6 +869,7 @@ export default function App() {
       cancelRemarks: string;
     }
   ) => {
+    if (!checkActionPermission('cancelEwayBill', 'Cancel E-Way Bill')) return;
     try {
       const updated = await ewayBillProvider.cancel(ewbNo, payload);
       setEwayBills(prev => prev.map(b => b.ewbNo === ewbNo ? updated : b));
@@ -867,11 +891,13 @@ export default function App() {
   };
 
   const handleAddPlannedOrder = (newOrder: ProductionOrder) => {
+    if (!checkActionPermission('manageProduction', 'Create Production Plan')) return;
     setOrders([newOrder, ...orders]);
     addAuditLog('Create Production Plan', 'ProductionOrder', newOrder.id, `Planned production for ${newOrder.items[0].itemName}`);
   };
 
   const handleUpdateActuals = (orderId: string, actualItems: { itemId: string, actualQty: number, actualRate: number }[]) => {
+    if (!checkActionPermission('recordConsumption', 'Record Consumption Actuals')) return;
     const updatedOrders = orders.map(order => {
       if (order.id === orderId) {
         const updatedItems = order.items.map(item => {
@@ -903,6 +929,7 @@ export default function App() {
   };
 
   const handleUpdateStock = (itemId: string, newStock: number) => {
+    if (!checkActionPermission('editInventory', 'Update Stock')) return;
     const item = inventory.find(i => i.id === itemId);
     if (!item) return;
     const diff = newStock - item.currentStock;
@@ -931,6 +958,7 @@ export default function App() {
   };
 
   const handleAddItem = (newItem: InventoryItem) => {
+    if (!checkActionPermission('editInventory', 'Create Item')) return;
     setInventory([...inventory, newItem]);
 
     // Seed stock levels for the new item across warehouses (60% main, 40% secondary)
@@ -960,9 +988,7 @@ export default function App() {
       failed: number;
     };
   }) => {
-    // Business Rule 1: Re-check role inside the import function
-    if (currentUser.role !== 'admin' && currentUser.role !== 'inventory_manager') {
-      alert("Unauthorized: Only Admin and Inventory Manager clearance can execute bulk imports.");
+    if (!checkActionPermission('editInventory', 'Bulk Import Items')) {
       return;
     }
 
@@ -1064,11 +1090,7 @@ export default function App() {
       healthyCount: number;
     };
   }) => {
-    // Business Rule 1: Re-check role inside the import function
-    if (currentUser.role !== 'admin' && currentUser.role !== 'inventory_manager') {
-      alert("Unauthorized: Only Admin and Inventory Manager clearance can execute batch imports.");
-      return;
-    }
+    if (!checkActionPermission('manageBatches', 'Bulk Import Batches')) return;
 
     const { batchesToCreate, batchesToUpdate, newWarehouses, duplicatePolicy, fileName, counts } = payload;
 
@@ -1149,12 +1171,14 @@ export default function App() {
   };
 
   const handleDeleteItem = (id: string) => {
+    if (!checkActionPermission('editInventory', 'Delete Item')) return;
     const item = inventory.find(i => i.id === id);
     setInventory(inventory.filter(i => i.id !== id));
     addAuditLog('Delete Item', 'InventoryItem', id, `Item ${item?.name} removed from master list`);
   };
 
   const handleGenerateIRN = (invoiceId: string) => {
+    if (!checkActionPermission('generateInvoices', 'Generate E-Invoice & IRN')) return;
     const ackNo = Math.floor(1000000000 + Math.random() * 9000000000).toString();
     const ackDate = new Date().toISOString().replace('T', ' ').substring(0, 19).replace(/-/g, '/');
     const irn = Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join('');
@@ -1597,11 +1621,11 @@ export default function App() {
             )}
 
             {activeTab === 'planning' && (
-              <PlanningPage inventory={inventory} onAddOrder={handleAddPlannedOrder} language={language} />
+              <PlanningPage inventory={inventory} onAddOrder={handleAddPlannedOrder} currentUser={currentUser} language={language} />
             )}
 
             {activeTab === 'consumption' && (
-              <ConsumptionPage orders={orders} onUpdateActuals={handleUpdateActuals} language={language} />
+              <ConsumptionPage orders={orders} onUpdateActuals={handleUpdateActuals} currentUser={currentUser} language={language} />
             )}
 
             {activeTab === 'inventory_mgmt' && (
@@ -1626,11 +1650,14 @@ export default function App() {
               <WarehousePage 
                 warehouses={warehouses} 
                 inventory={inventory}
+                currentUser={currentUser}
                 onAddWarehouse={(w) => {
+                  if (!checkActionPermission('manageWarehouses', 'Create Warehouse')) return;
                   setWarehouses([...warehouses, w]);
                   addAuditLog('Add Warehouse', 'Warehouse', w.id, `Warehouse ${w.name} created at ${w.location}`);
                 }}
                 onUpdateWarehouse={(updated) => {
+                  if (!checkActionPermission('manageWarehouses', 'Update Warehouse Details')) return;
                   setWarehouses(prev => prev.map(w => w.id === updated.id ? updated : w));
                   addAuditLog('Update Warehouse', 'Warehouse', updated.id, `Updated details for warehouse ${updated.name}`);
                 }}
@@ -1643,9 +1670,9 @@ export default function App() {
                 adjustments={adjustments}
                 inventory={inventory}
                 warehouses={warehouses}
+                currentUser={currentUser}
                 onAddAdjustment={(a) => {
-                  if (!checkPermission('makeAdjustments')) {
-                    alert("🔒 Security blockade: Your current active profile does not have permission to record manual stock adjustments. Please switch to Amit Sharma or Sneha R. in the header switcher to authorize this correction.");
+                  if (!checkActionPermission('makeAdjustments', 'Record Stock Adjustment')) {
                     return;
                   }
                   if (!a.reason || !a.reason.trim()) {
@@ -1691,6 +1718,7 @@ export default function App() {
                 currentUser={currentUser}
                 checkPermission={checkPermission}
                 onAddBatch={(b) => {
+                  if (!checkActionPermission('manageBatches', 'Add Batch')) return;
                   setBatches([b, ...batches]);
                   // Automatically increment item master's stock when raw batch is added
                   setInventory(prevInv => prevInv.map(item => 
@@ -1700,6 +1728,7 @@ export default function App() {
                 }}
                 onBulkImportBatches={handleBulkImportBatches}
                 onRecallBatch={(batchId) => {
+                  if (!checkActionPermission('executeRecall', 'Initiate Batch Recall')) return;
                   const targetb = batches.find(b => b.id === batchId);
                   if (!targetb) return;
                   setBatches(prev => prev.map(b => b.id === batchId ? { ...b, recalled: true } : b));
@@ -1719,15 +1748,19 @@ export default function App() {
                 suppliers={suppliers}
                 inventory={inventory}
                 warehouses={warehouses}
+                currentUser={currentUser}
                 onAddPO={(po) => {
+                  if (!checkActionPermission('createPO', 'Generate Purchase Order')) return;
                   setPurchaseOrders([po, ...purchaseOrders]);
                   addAuditLog('Create Purchase Order', 'PurchaseOrder', po.id, `PO created for supplier ${suppliers.find(s => s.id === po.supplierId)?.name}`);
                 }}
                 onAddSupplier={(s) => {
+                  if (!checkActionPermission('manageSuppliers', 'Create Supplier')) return;
                   setSuppliers([...suppliers, s]);
                   addAuditLog('Add Supplier', 'Supplier', s.id, `Supplier ${s.name} added to database`);
                 }}
                 onReceivePO={(poId, receivedQty, warehouseId, batchNumber, expiryDate) => {
+                  if (!checkActionPermission('receivePO', 'Receive Goods on PO')) return;
                   const targetPO = purchaseOrders.find(p => p.id === poId);
                   if (!targetPO) return;
                   const item = targetPO.items[0];
@@ -1818,12 +1851,14 @@ export default function App() {
                 onCancelEwb={handleCancelEwb}
                 ewbSettings={ewbSettings}
                 onUpdateSOStatus={(soId, status) => {
+                  if (!checkActionPermission('shipOrder', 'Ship / Dispatch Sales Order')) return;
                   setSalesOrders(prev => prev.map(so => so.id === soId ? { ...so, status } : so));
                   addAuditLog('Sales Order Dispatched', 'SalesOrder', soId, `Order ${soId} status updated to ${status}.`);
                 }}
                 onGenerateIRN={handleGenerateIRN}
                 language={language}
                 onAddSO={(so) => {
+                  if (!checkActionPermission('createSO', 'Create Sales Order')) return;
                   // Pre-validate all items to ensure stock is never oversold / negative
                   for (const item of so.items) {
                     const invItem = inventory.find(i => i.id === item.itemId);
@@ -1868,7 +1903,7 @@ export default function App() {
 
                   setSalesOrders([updatedSo, ...salesOrders]);
                   // Calculate FIFO batch deductions synchronously
-                  let updatedBatches = [...batches];
+                  const updatedBatches = [...batches];
                   let fifoDeductionLogDetails = '';
                   so.items.forEach(soldItem => {
                     let quantityToDeduct = soldItem.quantity;
@@ -1881,7 +1916,7 @@ export default function App() {
                       .filter(entry => entry.b.itemId === soldItem.itemId && !entry.b.recalled && entry.b.quantity > 0)
                       .sort((a, b) => new Date(a.b.manufactureDate).getTime() - new Date(b.b.manufactureDate).getTime());
                     
-                    let totalDeductionsForThisItem: { batchNumber: string, qty: number }[] = [];
+                    const totalDeductionsForThisItem: { batchNumber: string, qty: number }[] = [];
                     for (const entry of itemBatchesIndices) {
                       if (quantityToDeduct <= 0) break;
                       const batch = updatedBatches[entry.index];
@@ -1955,7 +1990,9 @@ export default function App() {
                 suppliers={suppliers}
                 onGenerateIRN={handleGenerateIRN}
                 language={language}
+                currentUser={currentUser}
                 onAddPayment={(p) => {
+                  if (!checkActionPermission('recordPayment', 'Record Payment')) return;
                   setPayments([p, ...payments]);
                   // Update Invoice paid amount
                   setInvoices(invoices.map(inv => {
@@ -1971,6 +2008,7 @@ export default function App() {
                   addAuditLog('Record Payment', 'Payment', p.id, `Payment of ₹${p.amount} received for invoice ${p.invoiceId}`);
                 }}
                 onAddCustomer={(c) => {
+                  if (!checkActionPermission('manageCustomers', 'Create Customer')) return;
                   setCustomers([...customers, c]);
                   addAuditLog('Add Customer', 'Customer', c.id, `Customer ${c.name} added to database`);
                 }}
@@ -2039,9 +2077,9 @@ export default function App() {
                 salesOrders={salesOrders}
                 orders={orders}
                 purchaseOrders={purchaseOrders}
+                currentUser={currentUser}
                 onAddAdjustment={(a) => {
-                  if (!checkPermission('makeAdjustments')) {
-                    alert("🔒 Security blockade: Your current active profile does not have permission to record stock adjustments or damage incidents. Please switch to Amit Sharma or Sneha R. in the header switcher.");
+                  if (!checkActionPermission('makeAdjustments', 'Record Stock Adjustment')) {
                     return;
                   }
                   setAdjustments([a, ...adjustments]);
@@ -2066,6 +2104,9 @@ export default function App() {
                   addAuditLog('Inventory Adjustment', 'InventoryAdjustment', a.id, `${a.type.toUpperCase()} of ${a.quantity} for item ${inventory.find(i => i.id === a.itemId)?.name}`);
                 }}
                 onUpdateAdjustmentDisposition={(adjId, disposition) => {
+                  if (!checkActionPermission('makeAdjustments', 'Update Damage Disposition')) {
+                    return;
+                  }
                   setAdjustments(prevAdjustments => prevAdjustments.map(adj => {
                     if (adj.id === adjId) {
                       if (disposition === 'Repaired' && adj.disposition !== 'Repaired') {
@@ -2100,6 +2141,7 @@ export default function App() {
                 transfers={transfers}
                 syncStatuses={syncStatuses}
                 onAddWarehouse={(w) => {
+                  if (!checkActionPermission('manageWarehouses', 'Create Warehouse')) return;
                   setWarehouses([...warehouses, w]);
                   setStockLevels(prev => {
                     const next = [...prev];
@@ -2121,10 +2163,12 @@ export default function App() {
                   addAuditLog('Add Warehouse', 'Warehouse', w.id, `Warehouse ${w.name} created at ${w.location}`);
                 }}
                 onAddTransfer={(t) => {
+                  if (!checkActionPermission('transferStock', 'Create Stock Transfer')) return;
                   setTransfers([t, ...transfers]);
                   addAuditLog('Add Stock Transfer', 'StockTransfer', t.id, `Stock transfer ${t.trackingNumber} initiated for ${t.quantity} items from ${warehouses.find(w => w.id === t.sourceWarehouseId)?.name} to ${warehouses.find(w => w.id === t.destWarehouseId)?.name}`);
                 }}
                 onUpdateTransferStatus={(transferId, status) => {
+                  if (!checkActionPermission('transferStock', 'Update Transfer Status')) return;
                   setTransfers(prevTransfers => prevTransfers.map(trf => {
                     if (trf.id === transferId) {
                       const prevStatus = trf.status;
@@ -2166,6 +2210,7 @@ export default function App() {
                   }));
                 }}
                 onSyncBranch={(whId) => {
+                  if (!checkActionPermission('syncBranches', 'Synchronize Branch Data')) return;
                   setSyncStatuses(prev => prev.map(s => {
                     if (s.warehouseId === whId) {
                       return {
@@ -2180,6 +2225,7 @@ export default function App() {
                   addAuditLog('Branch Re-Sync', 'Warehouse', whId, `Manual parity synchronization triggered for branch ${warehouses.find(w => w.id === whId)?.name}`);
                 }}
                 onSyncAllBranches={() => {
+                  if (!checkActionPermission('syncBranches', 'Synchronize All Branches')) return;
                   setSyncStatuses(prev => prev.map(s => {
                     return {
                       ...s,
@@ -2225,14 +2271,17 @@ export default function App() {
 
 // --- Sub-Pages ---
 
-function PlanningPage({ inventory, onAddOrder, language = 'en' }: { inventory: InventoryItem[], onAddOrder: (order: ProductionOrder) => void, language?: Language }) {
+function PlanningPage({ inventory, onAddOrder, language = 'en', currentUser }: { inventory: InventoryItem[], onAddOrder: (order: ProductionOrder) => void, language?: Language, currentUser?: Staff }) {
   const [orderId, setOrderId] = useState('');
   const [itemName, setItemName] = useState('');
   const [plannedQty, setPlannedQty] = useState('');
   const [plannedRate, setPlannedRate] = useState('');
+  const canManage = can(currentUser, 'manageProduction');
+  const tooltip = getPermissionDeniedTooltip('manageProduction', currentUser?.role);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManage) return;
     if (!itemName) {
       alert(language === 'ta' ? "தயாரிப்பு பெயர் உள்ளிடவும்" : "Please enter an item name.");
       return;
@@ -2292,7 +2341,12 @@ function PlanningPage({ inventory, onAddOrder, language = 'en' }: { inventory: I
             </div>
           </div>
 
-          <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-12 text-lg font-bold">
+          <Button 
+            type="submit" 
+            disabled={!canManage} 
+            title={!canManage ? tooltip : undefined}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white h-12 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             {tText("Add Planned Item", language)}
           </Button>
         </form>
@@ -2301,14 +2355,17 @@ function PlanningPage({ inventory, onAddOrder, language = 'en' }: { inventory: I
   );
 }
 
-function ConsumptionPage({ orders, onUpdateActuals, language = 'en' }: { orders: ProductionOrder[], onUpdateActuals: (id: string, items: any[]) => void, language?: Language }) {
+function ConsumptionPage({ orders, onUpdateActuals, language = 'en', currentUser }: { orders: ProductionOrder[], onUpdateActuals: (id: string, items: any[]) => void, language?: Language, currentUser?: Staff }) {
   const [orderId, setOrderId] = useState('');
   const [itemName, setItemName] = useState('');
   const [actualQty, setActualQty] = useState('');
   const [actualRate, setActualRate] = useState('');
+  const canRecord = can(currentUser, 'recordConsumption');
+  const tooltip = getPermissionDeniedTooltip('recordConsumption', currentUser?.role);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canRecord) return;
     
     // Find the order by ID
     const order = orders.find(o => o.id === orderId);
@@ -2373,7 +2430,12 @@ function ConsumptionPage({ orders, onUpdateActuals, language = 'en' }: { orders:
             </div>
           </div>
 
-          <Button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white h-12 text-lg font-bold">
+          <Button 
+            type="submit" 
+            disabled={!canRecord}
+            title={!canRecord ? tooltip : undefined}
+            className="w-full bg-green-600 hover:bg-green-700 text-white h-12 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             {tText("Record & Submit Consumption", language)}
           </Button>
         </form>
@@ -2412,7 +2474,8 @@ function InventoryMgmtPage({
   taxSettings?: TaxSettings
 }) {
   const [importOpen, setImportOpen] = useState(false);
-  const canImport = currentUser.role === 'admin' || currentUser.role === 'inventory_manager';
+  const canEdit = can(currentUser, 'editInventory');
+  const editTooltip = getPermissionDeniedTooltip('editInventory', language);
 
   const filteredInventory = inventory.filter(item => 
     !searchQuery || 
@@ -2436,7 +2499,7 @@ function InventoryMgmtPage({
           </div>
         ) : <div />}
         <div className="flex items-center gap-2.5">
-          {canImport ? (
+          {canEdit ? (
             <Button 
               onClick={() => setImportOpen(true)}
               variant="outline" 
@@ -2445,7 +2508,7 @@ function InventoryMgmtPage({
               <UploadCloud className="mr-2 h-4 w-4 text-indigo-600" /> {language === 'ta' ? "இறக்குமதி" : "Import"}
             </Button>
           ) : (
-            <div title={language === 'ta' ? "நிர்வாகி மற்றும் சரக்கு மேலாளர் மட்டுமே பொருட்களை இறக்குமதி செய்ய முடியும்." : "Only Admin and Inventory Manager can import inventory items."}>
+            <div title={editTooltip} className="relative group inline-block">
               <Button 
                 variant="outline" 
                 disabled 
@@ -2453,9 +2516,12 @@ function InventoryMgmtPage({
               >
                 <UploadCloud className="mr-2 h-4 w-4" /> {language === 'ta' ? "இறக்குமதி" : "Import"}
               </Button>
+              <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+                {editTooltip}
+              </div>
             </div>
           )}
-          <AddItemDialog onAdd={onAddItem} categories={categories} />
+          <AddItemDialog onAdd={onAddItem} categories={categories} currentUser={currentUser} language={language} />
           <BulkImportModal
             open={importOpen}
             onOpenChange={setImportOpen}
@@ -2530,10 +2596,20 @@ function InventoryMgmtPage({
                     <TableCell>{item.minStock}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <UpdateStockDialog item={item} onUpdate={onUpdateStock} />
-                        <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => onDeleteItem(item.id)}>
-                          <Trash2 size={16} />
-                        </Button>
+                        {canEdit ? (
+                          <>
+                            <UpdateStockDialog item={item} onUpdate={onUpdateStock} />
+                            <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-700 hover:bg-red-50" onClick={() => onDeleteItem(item.id)}>
+                              <Trash2 size={16} />
+                            </Button>
+                          </>
+                        ) : (
+                          <div className="relative group inline-block" title={editTooltip}>
+                            <Button variant="ghost" size="icon" disabled className="text-slate-300 cursor-not-allowed opacity-50">
+                              <Trash2 size={16} />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -2549,14 +2625,24 @@ function InventoryMgmtPage({
 
 // --- New Sub-Pages ---
 
-function WarehousePage({ warehouses, inventory, onAddWarehouse, onUpdateWarehouse, language = 'en' }: { 
+function WarehousePage({ 
+  warehouses, 
+  inventory, 
+  onAddWarehouse, 
+  onUpdateWarehouse, 
+  currentUser,
+  language = 'en' 
+}: { 
   warehouses: Warehouse[], 
   inventory: InventoryItem[],
   onAddWarehouse: (w: Warehouse) => void,
   onUpdateWarehouse?: (w: Warehouse) => void,
+  currentUser?: Staff,
   language?: Language
 }) {
   const [open, setOpen] = useState(false);
+  const canManage = can(currentUser, 'manageWarehouses');
+  const tooltipText = getPermissionDeniedTooltip('manageWarehouses', language);
   const [name, setName] = useState('');
   const [location, setLocation] = useState('');
 
@@ -2571,6 +2657,7 @@ function WarehousePage({ warehouses, inventory, onAddWarehouse, onUpdateWarehous
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!can(currentUser, 'manageWarehouses')) return;
     onAddWarehouse({ id: `wh-${Date.now()}`, name, location });
     setOpen(false);
     setName('');
@@ -2621,10 +2708,21 @@ function WarehousePage({ warehouses, inventory, onAddWarehouse, onUpdateWarehous
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger render={<Button className="bg-indigo-600 text-white rounded-xl font-bold" />}>
-            <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "புதிய கிடங்கைச் சேர்க்க" : "Add Warehouse"}
-          </DialogTrigger>
+        <Dialog open={open && canManage} onOpenChange={(isOpen) => { if (canManage) setOpen(isOpen); }}>
+          {canManage ? (
+            <DialogTrigger render={<Button className="bg-indigo-600 text-white rounded-xl font-bold" />}>
+              <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "புதிய கிடங்கைச் சேர்க்க" : "Add Warehouse"}
+            </DialogTrigger>
+          ) : (
+            <div className="relative group inline-block" title={tooltipText}>
+              <Button disabled className="bg-indigo-600 opacity-60 cursor-not-allowed text-white rounded-xl font-bold">
+                <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "புதிய கிடங்கைச் சேர்க்க" : "Add Warehouse"}
+              </Button>
+              <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+                {tooltipText}
+              </div>
+            </div>
+          )}
           <DialogContent>
             <form onSubmit={handleSubmit}>
               <DialogHeader><DialogTitle>{language === 'ta' ? "புதிய கிடங்கு சேர்க்க" : "Add New Warehouse"}</DialogTitle></DialogHeader>
@@ -2674,14 +2772,27 @@ function WarehousePage({ warehouses, inventory, onAddWarehouse, onUpdateWarehous
                         </p>
                       </div>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs h-7 border-amber-300 text-amber-800 hover:bg-amber-100 font-bold shrink-0 self-start sm:self-auto"
-                      onClick={() => handleOpenEdit(wh)}
-                    >
-                      {language === 'ta' ? "விவரங்களை முடிக்க" : "Complete Details"}
-                    </Button>
+                    {canManage ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-7 border-amber-300 text-amber-800 hover:bg-amber-100 font-bold shrink-0 self-start sm:self-auto"
+                        onClick={() => handleOpenEdit(wh)}
+                      >
+                        {language === 'ta' ? "விவரங்களை முடிக்க" : "Complete Details"}
+                      </Button>
+                    ) : (
+                      <div className="relative group inline-block" title={tooltipText}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled
+                          className="text-xs h-7 border-slate-200 text-slate-400 cursor-not-allowed opacity-60 font-bold shrink-0 self-start sm:self-auto"
+                        >
+                          {language === 'ta' ? "விவரங்களை முடிக்க" : "Complete Details"}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2814,14 +2925,17 @@ function WarehousePage({ warehouses, inventory, onAddWarehouse, onUpdateWarehous
   );
 }
 
-function AdjustmentPage({ adjustments, inventory, warehouses, onAddAdjustment, language = 'en' }: {
+function AdjustmentPage({ adjustments, inventory, warehouses, onAddAdjustment, language = 'en', currentUser }: {
   adjustments: InventoryAdjustment[],
   inventory: InventoryItem[],
   warehouses: Warehouse[],
   onAddAdjustment: (a: InventoryAdjustment) => void,
-  language?: Language
+  language?: Language,
+  currentUser?: Staff
 }) {
   const [open, setOpen] = useState(false);
+  const canAdjust = can(currentUser, 'makeAdjustments');
+  const adjTooltip = getPermissionDeniedTooltip('makeAdjustments', language);
   const [formData, setFormData] = useState({
     itemId: '',
     warehouseId: warehouses[0]?.id || '',
@@ -2832,6 +2946,7 @@ function AdjustmentPage({ adjustments, inventory, warehouses, onAddAdjustment, l
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canAdjust) return;
     onAddAdjustment({
       id: `ADJ-${Date.now()}`,
       itemId: formData.itemId,
@@ -2848,10 +2963,24 @@ function AdjustmentPage({ adjustments, inventory, warehouses, onAddAdjustment, l
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger render={<Button className="bg-indigo-600 text-white rounded-xl font-bold" />}>
-            <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "புதிய சரக்கு திருத்தம்" : "New Adjustment"}
-          </DialogTrigger>
+        <Dialog open={open && canAdjust} onOpenChange={(val) => { if (canAdjust) setOpen(val); }}>
+          {canAdjust ? (
+            <DialogTrigger render={<Button className="bg-indigo-600 text-white rounded-xl font-bold" />}>
+              <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "புதிய சரக்கு திருத்தம்" : "New Adjustment"}
+            </DialogTrigger>
+          ) : (
+            <div className="relative group inline-block" title={adjTooltip}>
+              <Button 
+                disabled 
+                className="bg-indigo-600 opacity-60 cursor-not-allowed text-white rounded-xl font-bold"
+              >
+                <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "புதிய சரக்கு திருத்தம்" : "New Adjustment"}
+              </Button>
+              <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+                {adjTooltip}
+              </div>
+            </div>
+          )}
           <DialogContent>
             <form onSubmit={handleSubmit}>
               <DialogHeader><DialogTitle>{language === 'ta' ? "சரக்கு அளவு சரிசெய்தல்" : "Inventory Adjustment"}</DialogTitle></DialogHeader>
@@ -2942,7 +3071,11 @@ function BatchPage({
 }) {
   const [open, setOpen] = useState(false);
   const [batchImportOpen, setBatchImportOpen] = useState(false);
-  const canImportBatches = currentUser.role === 'admin' || currentUser.role === 'inventory_manager';
+  const canManageBatches = can(currentUser, 'manageBatches');
+  const canImportBatches = canManageBatches;
+  const batchTooltip = getPermissionDeniedTooltip('manageBatches', language);
+  const canRecall = can(currentUser, 'executeRecall');
+  const recallTooltip = getPermissionDeniedTooltip('executeRecall', language);
 
   const [formData, setFormData] = useState({ 
     itemId: inventory[0]?.id || '', 
@@ -2985,7 +3118,7 @@ function BatchPage({
       itemId: formData.itemId,
       batchNumber: formData.batchNumber || `BAT-LOT-${Math.floor(Math.random() * 10000)}`,
       manufactureDate: mDate,
-      expiryDate: formData.expiryDate || '2027-05-26',
+      expiryDate: formData.expiryDate || AppClock.offsetDaysString(365),
       quantity: Number(formData.quantity) || 0,
       warehouseId: formData.warehouseId
     });
@@ -3017,7 +3150,7 @@ function BatchPage({
 
   // Statistics calculation
   const stats = useMemo(() => {
-    let totalLots = enrichedBatches.length;
+    const totalLots = enrichedBatches.length;
     let expiredUrgentCount = 0; // <= 7 days
     let cautionCount = 0; // 8 to 30 days
     let healthyCount = 0; // > 30 days
@@ -3305,10 +3438,21 @@ function BatchPage({
             />
             
             {/* Add Batch Button */}
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger render={<Button className="bg-indigo-600 text-white rounded-xl h-10 px-4" />}>
-                <Plus className="mr-2 h-4 w-4" /> Assign Batch Lot
-              </DialogTrigger>
+            <Dialog open={open && canManageBatches} onOpenChange={(val) => { if (canManageBatches) setOpen(val); }}>
+              {canManageBatches ? (
+                <DialogTrigger render={<Button className="bg-indigo-600 text-white rounded-xl h-10 px-4" />}>
+                  <Plus className="mr-2 h-4 w-4" /> Assign Batch Lot
+                </DialogTrigger>
+              ) : (
+                <div className="relative group inline-block" title={batchTooltip}>
+                  <Button disabled className="bg-indigo-600 opacity-60 cursor-not-allowed text-white rounded-xl h-10 px-4">
+                    <Plus className="mr-2 h-4 w-4" /> Assign Batch Lot
+                  </Button>
+                  <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+                    {batchTooltip}
+                  </div>
+                </div>
+              )}
               <DialogContent className="max-w-md">
                 <form onSubmit={handleSubmit}>
                   <DialogHeader>
@@ -3525,21 +3669,30 @@ function BatchPage({
                               <ShieldAlert className="w-3 h-3 text-rose-700 flex-shrink-0 animate-pulse" />
                               Quarantined & Pulled
                             </div>
-                          ) : (
+                          ) : canRecall ? (
                             <Button 
                               onClick={() => {
-                                if (!checkPermission('executeRecall')) {
-                                  alert("🔒 Security blockade: Your current active profile does not have permission to trigger emergency product recalls. Please switch to Amit Sharma or Sneha R. in the header switcher to authorize this quarantine.");
-                                  return;
-                                }
+                                if (!checkPermission('executeRecall')) return;
                                 if (window.confirm(`[Simulation Mode] Are you sure you want to trigger emergency recall workflow for Lot #${batch.batchNumber}? ${batch.quantity} ${unitLabel} will be safely isolated.`)) {
                                   onRecallBatch(batch.id);
                                 }
                               }}
-                              className="bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white rounded-xl text-xs h-8 px-3 border border-rose-200 select-none shadow-none"
+                              className="bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white rounded-xl text-xs h-8 px-3 border border-rose-200 select-none shadow-none cursor-pointer"
                             >
                               <ShieldAlert className="w-3.5 h-3.5 mr-1" /> Recall Lot
                             </Button>
+                          ) : (
+                            <div className="relative group inline-block" title={recallTooltip}>
+                              <Button 
+                                disabled
+                                className="bg-rose-50 text-rose-300 border border-rose-100 rounded-xl text-xs h-8 px-3 opacity-60 cursor-not-allowed select-none shadow-none"
+                              >
+                                <ShieldAlert className="w-3.5 h-3.5 mr-1" /> Recall Lot
+                              </Button>
+                              <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+                                {recallTooltip}
+                              </div>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
@@ -3566,7 +3719,8 @@ function PurchasePage({
   onReceivePO,
   language = 'en',
   preloadedPOItem,
-  onClearPreloadedPO
+  onClearPreloadedPO,
+  currentUser
 }: {
   purchaseOrders: PurchaseOrder[],
   suppliers: Supplier[],
@@ -3577,10 +3731,18 @@ function PurchasePage({
   onReceivePO?: (poId: string, receivedQty: number, destinationWarehouseId: string, batchNumber?: string, expiryDate?: string) => void,
   language?: Language,
   preloadedPOItem?: { itemId: string; quantity: number } | null,
-  onClearPreloadedPO?: () => void
+  onClearPreloadedPO?: () => void,
+  currentUser?: Staff
 }) {
   const [openPO, setOpenPO] = useState(false);
   const [openSup, setOpenSup] = useState(false);
+  const canCreatePO = can(currentUser, 'createPO');
+  const canManageSuppliers = can(currentUser, 'manageSuppliers');
+  const canReceive = can(currentUser, 'receivePO');
+  const poTooltip = getPermissionDeniedTooltip('createPO', language);
+  const supTooltip = getPermissionDeniedTooltip('manageSuppliers', language);
+  const rcvTooltip = getPermissionDeniedTooltip('receivePO', language);
+
   const [receivingPO, setReceivingPO] = useState<PurchaseOrder | null>(null);
   const [receiveData, setReceiveData] = useState({
     quantity: '',
@@ -3610,6 +3772,7 @@ function PurchasePage({
 
   const handlePOSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!can(currentUser, 'createPO')) return;
     const total = Number(poData.quantity) * Number(poData.rate);
     onAddPO({
       id: `PO-${Date.now()}`,
@@ -3621,6 +3784,20 @@ function PurchasePage({
     });
     setOpenPO(false);
     setPoData({ supplierId: '', itemId: '', quantity: '', rate: '' });
+  };
+
+  const handleSupSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!can(currentUser, 'manageSuppliers')) return;
+    onAddSupplier({
+      id: `SUP-${Date.now()}`,
+      name: supData.name,
+      contact: supData.contact,
+      email: supData.email,
+      category: supData.category || 'Raw Materials'
+    });
+    setOpenSup(false);
+    setSupData({ name: '', contact: '', email: '', category: '' });
   };
 
   const openReceiveModal = (po: PurchaseOrder) => {
@@ -3645,6 +3822,7 @@ function PurchasePage({
 
   const handleReceiveSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!can(currentUser, 'receivePO')) return;
     if (!receivingPO || !onReceivePO) return;
     const qty = Number(receiveData.quantity);
     if (qty <= 0) {
@@ -3658,8 +3836,35 @@ function PurchasePage({
   return (
     <div className="space-y-6">
       <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={() => setOpenSup(true)} className="rounded-xl font-bold">{language === 'ta' ? "முன்னோடி சப்ளையர்கள்" : "Manage Suppliers"}</Button>
-        <Button onClick={() => setOpenPO(true)} className="bg-indigo-600 text-white rounded-xl font-bold"><Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "ஆணை உருவாக்கு" : "Create PO"}</Button>
+        {canManageSuppliers ? (
+          <Button variant="outline" onClick={() => setOpenSup(true)} className="rounded-xl font-bold">
+            {language === 'ta' ? "முன்னோடி சப்ளையர்கள்" : "Manage Suppliers"}
+          </Button>
+        ) : (
+          <div className="relative group inline-block" title={supTooltip}>
+            <Button variant="outline" disabled className="rounded-xl font-bold border-slate-200 text-slate-400 cursor-not-allowed opacity-60">
+              {language === 'ta' ? "முன்னோடி சப்ளையர்கள்" : "Manage Suppliers"}
+            </Button>
+            <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+              {supTooltip}
+            </div>
+          </div>
+        )}
+
+        {canCreatePO ? (
+          <Button onClick={() => setOpenPO(true)} className="bg-indigo-600 text-white rounded-xl font-bold">
+            <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "ஆணை உருவாக்கு" : "Create PO"}
+          </Button>
+        ) : (
+          <div className="relative group inline-block" title={poTooltip}>
+            <Button disabled className="bg-indigo-600 opacity-60 cursor-not-allowed text-white rounded-xl font-bold">
+              <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "ஆணை உருவாக்கு" : "Create PO"}
+            </Button>
+            <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+              {poTooltip}
+            </div>
+          </div>
+        )}
       </div>
 
       <Card className="shadow-sm border-gray-200">
@@ -3703,14 +3908,30 @@ function PurchasePage({
                           <CheckCircle2 className="w-3.5 h-3.5" /> {language === 'ta' ? "பெறப்பட்டது" : "Fulfilled"}
                         </span>
                       ) : (
-                        <Button 
-                          size="sm" 
-                          variant="outline"
-                          onClick={() => openReceiveModal(po)}
-                          className="h-7 text-xs font-bold text-indigo-600 border-indigo-200 hover:bg-indigo-50"
-                        >
-                          <Truck className="w-3.5 h-3.5 mr-1" /> {language === 'ta' ? "பொருட்களைப் பெறு" : "Receive Goods"}
-                        </Button>
+                        canReceive ? (
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => openReceiveModal(po)}
+                            className="h-7 text-xs font-bold text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                          >
+                            <Truck className="w-3.5 h-3.5 mr-1" /> {language === 'ta' ? "பொருட்களைப் பெறு" : "Receive Goods"}
+                          </Button>
+                        ) : (
+                          <div className="relative group inline-block" title={rcvTooltip}>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              disabled
+                              className="h-7 text-xs font-bold text-slate-400 border-slate-200 cursor-not-allowed opacity-60"
+                            >
+                              <Truck className="w-3.5 h-3.5 mr-1" /> {language === 'ta' ? "பொருட்களைப் பெறு" : "Receive Goods"}
+                            </Button>
+                            <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+                              {rcvTooltip}
+                            </div>
+                          </div>
+                        )
                       )}
                     </TableCell>
                   </TableRow>
@@ -3930,8 +4151,14 @@ function SalesPage({
     });
   }, [salesOrders, filterStatus, invoices, customers, warehouses, ewayBills]);
 
+  const canCreateSO = can(currentUser, 'createSO');
+  const canShipOrder = can(currentUser, 'shipOrder');
+  const soTooltip = getPermissionDeniedTooltip('createSO', language);
+  const shipTooltip = getPermissionDeniedTooltip('shipOrder', language);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!can(currentUser, 'createSO')) return;
     if (!formData.itemId || !formData.customerId) return;
     
     // Validate sale quantity strictly using pure domain rules
@@ -3974,7 +4201,20 @@ function SalesPage({
           onScan={handleBarcodeScan} 
           trigger={<Button variant="outline" className="rounded-xl border-dashed border-2 hover:border-indigo-400 hover:bg-indigo-50 font-bold"><Scan className="mr-2 h-4 w-4" /> {language === 'ta' ? "விற்பனை செய்ய ஸ்கேன் செய்க" : "Scan to Sell"}</Button>}
         />
-        <Button onClick={() => setOpen(true)} className="bg-indigo-600 text-white rounded-xl font-bold"><Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "புதிய விற்பனை ஆணை" : "New Sales Order"}</Button>
+        {canCreateSO ? (
+          <Button onClick={() => setOpen(true)} className="bg-indigo-600 text-white rounded-xl font-bold">
+            <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "புதிய விற்பனை ஆணை" : "New Sales Order"}
+          </Button>
+        ) : (
+          <div className="relative group inline-block" title={soTooltip}>
+            <Button disabled className="bg-indigo-600 opacity-60 cursor-not-allowed text-white rounded-xl font-bold">
+              <Plus className="mr-2 h-4 w-4" /> {language === 'ta' ? "புதிய விற்பனை ஆணை" : "New Sales Order"}
+            </Button>
+            <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+              {soTooltip}
+            </div>
+          </div>
+        )}
       </div>
 
       <Card className="shadow-sm border-gray-200">
@@ -4052,20 +4292,32 @@ function SalesPage({
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           {so.status === 'pending' && (
-                            <Button 
-                              size="xs" 
-                              className="h-7 text-[10px] font-black bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center gap-1"
-                              onClick={() => {
-                                if (app.requirement === 'Required' && !hasEwb) {
-                                  alert(`⚠️ Statutory Dispatch Warning: Consignment value (₹${so.totalAmount.toLocaleString('en-IN')}) requires an active statutory E-Way Bill under Rule 138, but none has been generated. Marking order as Shipped...`);
-                                }
-                                if (onUpdateSOStatus) {
-                                  onUpdateSOStatus(so.id, 'shipped');
-                                }
-                              }}
-                            >
-                              <Truck size={10} /> {language === 'ta' ? "அனுப்பப்பட்டது" : "Mark Shipped"}
-                            </Button>
+                            canShipOrder ? (
+                              <Button 
+                                size="xs" 
+                                className="h-7 text-[10px] font-black bg-amber-500 hover:bg-amber-600 text-white rounded-lg flex items-center gap-1"
+                                onClick={() => {
+                                  if (app.requirement === 'Required' && !hasEwb) {
+                                    alert(`⚠️ Statutory Dispatch Warning: Consignment value (₹${so.totalAmount.toLocaleString('en-IN')}) requires an active statutory E-Way Bill under Rule 138, but none has been generated. Marking order as Shipped...`);
+                                  }
+                                  if (onUpdateSOStatus) {
+                                    onUpdateSOStatus(so.id, 'shipped');
+                                  }
+                                }}
+                              >
+                                <Truck size={10} /> {language === 'ta' ? "அனுப்பப்பட்டது" : "Mark Shipped"}
+                              </Button>
+                            ) : (
+                              <div className="relative group inline-block" title={shipTooltip}>
+                                <Button 
+                                  size="xs" 
+                                  disabled
+                                  className="h-7 text-[10px] font-black bg-slate-200 text-slate-400 rounded-lg flex items-center gap-1 cursor-not-allowed opacity-60"
+                                >
+                                  <Truck size={10} /> {language === 'ta' ? "அனுப்பப்பட்டது" : "Mark Shipped"}
+                                </Button>
+                              </div>
+                            )
                           )}
 
                           <ViewInvoiceDialog 
@@ -4191,6 +4443,7 @@ function BillingPage({
   onAddCustomer,
   addAuditLog,
   checkPermission,
+  currentUser,
   language = 'en'
 }: {
   invoices: Invoice[],
@@ -4207,11 +4460,16 @@ function BillingPage({
   onAddCustomer: (c: Customer) => void,
   addAuditLog: (action: string, entityType: string, entityId: string, details: string) => void,
   checkPermission: (perm: string) => boolean,
+  currentUser?: Staff,
   language?: Language
 }) {
   const [billingTab, setBillingTab] = useState('invoices');
   const [openPayment, setOpenPayment] = useState(false);
   const [openCustomer, setOpenCustomer] = useState(false);
+  const canManageCustomers = can(currentUser, 'manageCustomers');
+  const custTooltip = getPermissionDeniedTooltip('manageCustomers', language);
+  const canRecordPayment = can(currentUser, 'recordPayment');
+  const payTooltip = getPermissionDeniedTooltip('recordPayment', language);
 
   const stats = {
     totalOutstanding: invoices.filter(i => i.status !== 'paid').reduce((sum, i) => sum + (i.totalAmount - i.paidAmount), 0),
@@ -4323,7 +4581,16 @@ function BillingPage({
         </div>
         <div className="flex gap-2">
           {billingTab === 'customers' ? (
-            <Button onClick={() => setOpenCustomer(true)} className="bg-indigo-600 text-white rounded-xl"><Plus className="mr-2 h-4 w-4" /> Add Customer</Button>
+            canManageCustomers ? (
+              <Button onClick={() => setOpenCustomer(true)} className="bg-indigo-600 text-white rounded-xl"><Plus className="mr-2 h-4 w-4" /> Add Customer</Button>
+            ) : (
+              <div className="relative group inline-block" title={custTooltip}>
+                <Button disabled className="bg-indigo-600 opacity-60 cursor-not-allowed text-white rounded-xl"><Plus className="mr-2 h-4 w-4" /> Add Customer</Button>
+                <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+                  {custTooltip}
+                </div>
+              </div>
+            )
           ) : billingTab === 'gst' ? (
             <div className="text-xs bg-emerald-50 text-emerald-700 font-bold px-3 py-1.5 rounded-xl border border-emerald-200 flex items-center">
               GSTR-1 COMPLIANT
@@ -4337,7 +4604,16 @@ function BillingPage({
               POS BILL CONSOLE
             </div>
           ) : (
-            <Button onClick={() => setOpenPayment(true)} className="bg-indigo-600 text-white rounded-xl"><Plus className="mr-2 h-4 w-4" /> Record Payment</Button>
+            canRecordPayment ? (
+              <Button onClick={() => setOpenPayment(true)} className="bg-indigo-600 text-white rounded-xl"><Plus className="mr-2 h-4 w-4" /> Record Payment</Button>
+            ) : (
+              <div className="relative group inline-block" title={payTooltip}>
+                <Button disabled className="bg-indigo-600 opacity-60 cursor-not-allowed text-white rounded-xl"><Plus className="mr-2 h-4 w-4" /> Record Payment</Button>
+                <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+                  {payTooltip}
+                </div>
+              </div>
+            )
           )}
         </div>
       </div>
@@ -4701,9 +4977,9 @@ function AuditLogPage({ logs, language = 'en' }: { logs: AuditLog[], language?: 
         (log.operatorName && log.operatorName.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (log.operatorId && log.operatorId.toLowerCase().includes(searchTerm.toLowerCase()));
 
-      const matchesRole = 
+      const matchesRole =
         roleFilter === 'all' || 
-        log.operatorRole === roleFilter ||
+        normalizeRole(log.operatorRole || '') === normalizeRole(roleFilter) ||
         (roleFilter === 'system' && !log.operatorId);
 
       const matchesAction =
@@ -4765,14 +5041,17 @@ function AuditLogPage({ logs, language = 'en' }: { logs: AuditLog[], language?: 
   }, [stats.operatorCounts]);
 
   const getRoleBadgeStyle = (role?: string) => {
-    switch (role) {
+    const canonical = normalizeRole(role || '');
+    switch (canonical) {
       case 'admin':
         return 'bg-indigo-50 text-indigo-700 border-indigo-100';
       case 'inventory_manager':
         return 'bg-emerald-50 text-emerald-700 border-emerald-100';
       case 'billing_clerk':
         return 'bg-cyan-50 text-cyan-700 border-cyan-100';
-      case 'staff_viewer':
+      case 'production_supervisor':
+        return 'bg-purple-50 text-purple-700 border-purple-100';
+      case 'viewer':
         return 'bg-slate-100 text-slate-700 border-slate-200';
       default:
         return 'bg-gray-50 text-gray-500 border-gray-100';
@@ -4857,7 +5136,8 @@ function AuditLogPage({ logs, language = 'en' }: { logs: AuditLog[], language?: 
               <option value="admin">Admin Level</option>
               <option value="inventory_manager">Inventory Manager</option>
               <option value="billing_clerk">Billing Clerk</option>
-              <option value="staff_viewer">Staff Viewer</option>
+              <option value="production_supervisor">Production Supervisor</option>
+              <option value="viewer">Staff Viewer</option>
               <option value="system">System Automated</option>
             </select>
 
@@ -5093,8 +5373,20 @@ function StatCard({ title, value, subtitle, trend, icon }: { title: string; valu
   );
 }
 
-function AddItemDialog({ onAdd, categories }: { onAdd: (item: InventoryItem) => void, categories: Category[] }) {
+function AddItemDialog({ 
+  onAdd, 
+  categories, 
+  currentUser, 
+  language = 'en' 
+}: { 
+  onAdd: (item: InventoryItem) => void; 
+  categories: Category[]; 
+  currentUser?: Staff; 
+  language?: Language; 
+}) {
   const [open, setOpen] = useState(false);
+  const canAdd = can(currentUser, 'editInventory');
+  const tooltipText = getPermissionDeniedTooltip('editInventory', language);
   const [formData, setFormData] = useState({
     name: '',
     sku: '',
@@ -5113,6 +5405,7 @@ function AddItemDialog({ onAdd, categories }: { onAdd: (item: InventoryItem) => 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!can(currentUser, 'editInventory')) return;
     const newItem: InventoryItem = {
       id: Math.random().toString(36).substr(2, 9),
       name: formData.name,
@@ -5139,12 +5432,26 @@ function AddItemDialog({ onAdd, categories }: { onAdd: (item: InventoryItem) => 
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl" />}>
-        <>
-          <Plus className="mr-2 h-4 w-4" /> Add New Item
-        </>
-      </DialogTrigger>
+    <Dialog open={open && canAdd} onOpenChange={(val) => { if (canAdd) setOpen(val); }}>
+      {canAdd ? (
+        <DialogTrigger render={<Button className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl" />}>
+          <>
+            <Plus className="mr-2 h-4 w-4" /> Add New Item
+          </>
+        </DialogTrigger>
+      ) : (
+        <div className="relative group inline-block" title={tooltipText}>
+          <Button 
+            disabled 
+            className="bg-indigo-600 opacity-60 cursor-not-allowed text-white rounded-xl"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add New Item
+          </Button>
+          <div className="absolute right-0 bottom-full mb-1.5 hidden group-hover:block z-50 w-64 p-2 bg-slate-900 text-white text-[11px] rounded-lg shadow-lg text-center pointer-events-none">
+            {tooltipText}
+          </div>
+        </div>
+      )}
       <DialogContent className="sm:max-w-[600px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
@@ -5678,375 +5985,5 @@ function ViewInvoiceDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function StaffPage({ 
-  staff, 
-  onUpdateStaff, 
-  onAddStaff,
-  addAuditLog,
-  language = 'en'
-}: { 
-  staff: Staff[], 
-  onUpdateStaff: (staffList: Staff[]) => void, 
-  onAddStaff: (s: Staff) => void,
-  addAuditLog: (action: string, entityType: string, entityId: string, details: string) => void,
-  language?: Language
-}) {
-  const [open, setOpen] = useState(false);
-  const [newStaff, setNewStaff] = useState({
-    name: '',
-    email: '',
-    role: 'staff_viewer' as Staff['role']
-  });
-
-  const getRoleDefaults = (role: Staff['role']): Staff['permissions'] => {
-    switch (role) {
-      case 'admin':
-        return {
-          editInventory: true,
-          manageBatches: true,
-          makeAdjustments: true,
-          executeRecall: true,
-          manageSuppliers: true,
-          createOrders: true,
-          recordPayments: true,
-          viewReports: true,
-          manageStaff: true
-        };
-      case 'inventory_manager':
-        return {
-          editInventory: true,
-          manageBatches: true,
-          makeAdjustments: true,
-          executeRecall: true,
-          manageSuppliers: true,
-          createOrders: false,
-          recordPayments: false,
-          viewReports: false,
-          manageStaff: false
-        };
-      case 'billing_clerk':
-        return {
-          editInventory: false,
-          manageBatches: false,
-          makeAdjustments: false,
-          executeRecall: false,
-          manageSuppliers: false,
-          createOrders: true,
-          recordPayments: true,
-          viewReports: true,
-          manageStaff: false
-        };
-      case 'staff_viewer':
-      default:
-        return {
-          editInventory: false,
-          manageBatches: false,
-          makeAdjustments: false,
-          executeRecall: false,
-          manageSuppliers: false,
-          createOrders: false,
-          recordPayments: false,
-          viewReports: false,
-          manageStaff: false
-        };
-    }
-  };
-
-  const handleCreateStaff = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newStaff.name || !newStaff.email) return;
-
-    const freshS: Staff = {
-      id: `STF-${Date.now()}`,
-      name: newStaff.name,
-      email: newStaff.email,
-      role: newStaff.role,
-      lastActive: 'Just joined',
-      permissions: getRoleDefaults(newStaff.role)
-    };
-
-    onAddStaff(freshS);
-    setOpen(false);
-    setNewStaff({ name: '', email: '', role: 'staff_viewer' });
-  };
-
-  const handleTogglePermission = (staffId: string, permKey: keyof Staff['permissions']) => {
-    const updated = staff.map(s => {
-      if (s.id === staffId) {
-        const nextVal = !s.permissions[permKey];
-        const detailStr = `Updated permission [${permKey}] to ${nextVal ? 'ALLOWED' : 'REVOKED'} for ${s.name}`;
-        addAuditLog('Staff Permissions Update', 'Staff', staffId, detailStr);
-
-        return {
-          ...s,
-          permissions: {
-            ...s.permissions,
-            [permKey]: nextVal
-          }
-        };
-      }
-      return s;
-    });
-    onUpdateStaff(updated);
-  };
-
-  const handleRoleChange = (staffId: string, nextRole: Staff['role']) => {
-    const updated = staff.map(s => {
-      if (s.id === staffId) {
-        addAuditLog('Staff Role Reassignment', 'Staff', staffId, `Changed role of ${s.name} from '${s.role}' to '${nextRole}'. Reloaded system security defaults.`);
-        return {
-          ...s,
-          role: nextRole,
-          permissions: getRoleDefaults(nextRole)
-        };
-      }
-      return s;
-    });
-    onUpdateStaff(updated);
-  };
-
-  // Compute permission metrics for visualization
-  const chartData = useMemo(() => {
-    const counts = {
-      editInventory: 0,
-      manageBatches: 0,
-      makeAdjustments: 0,
-      executeRecall: 0,
-      manageSuppliers: 0,
-      createOrders: 0,
-      recordPayments: 0,
-      viewReports: 0,
-      manageStaff: 0
-    };
-
-    staff.forEach(s => {
-      Object.keys(counts).forEach(k => {
-        const key = k as keyof Staff['permissions'];
-        if (s.permissions[key]) {
-          counts[key]++;
-        }
-      });
-    });
-
-    return [
-      { name: 'Edit Items', Staff: counts.editInventory },
-      { name: 'Mfg Batches', Staff: counts.manageBatches },
-      { name: 'Stock Adjust', Staff: counts.makeAdjustments },
-      { name: 'Recall Lots', Staff: counts.executeRecall },
-      { name: 'Supplier Admin', Staff: counts.manageSuppliers },
-      { name: 'Issue Orders', Staff: counts.createOrders },
-      { name: 'Collect PMT', Staff: counts.recordPayments },
-      { name: 'Reports', Staff: counts.viewReports }
-    ];
-  }, [staff]);
-
-  return (
-    <div className="space-y-6 text-[#1A1A1A]">
-      {/* Dynamic Critical Notifications panel */}
-      <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-150 text-indigo-900 p-4 rounded-2xl shadow-sm">
-        <Lock className="w-5 h-5 text-indigo-600 flex-shrink-0 animate-pulse" />
-        <div className="text-xs">
-          <span className="font-bold">SECURITY ENVIRONMENT SIMULATION:</span> Toggle permissions or change roles directly. Use the profile switcher in the top right header to toggle active employee contexts and observe instantaneous, real-time feature blockades!
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Statistics and Visualizer */}
-        <Card className="shadow-sm border-gray-200 lg:col-span-1 bg-white">
-          <CardHeader>
-            <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-indigo-600" />
-              Security Clearance Matrix
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Staff counts possessing specific system level access clearances.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} layout="vertical" margin={{ left: -10, top: 0, right: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={true} stroke="#EEF2F6" />
-                  <XAxis type="number" hide />
-                  <YAxis dataKey="name" type="category" width={100} style={{ fontSize: '10px', fontWeight: 'bold' }} />
-                  <Tooltip 
-                    cursor={{ fill: 'transparent' }}
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                  />
-                  <Bar dataKey="Staff" fill="#4F46E5" radius={[0, 4, 4, 0]} barSize={12} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Staff Administration & Roster */}
-        <Card className="shadow-sm border-gray-200 lg:col-span-2 bg-white">
-          <CardHeader className="flex flex-row justify-between items-center pb-2">
-            <div>
-              <CardTitle className="text-sm font-bold text-slate-800">{language === 'ta' ? "பணியாளர்கள் & விபரம்" : "Staff & Organization Roster"}</CardTitle>
-              <CardDescription className="text-xs">{language === 'ta' ? "அனுமதிகளை நிர்வகிக்க அல்லது ஊழியர்களை ஊக்குவிக்க" : "Toggle fine-grained credentials or promote staff below."}</CardDescription>
-            </div>
-            {/* Create Staff Profile Button */}
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger render={<Button className="bg-indigo-600 text-white rounded-xl text-xs h-9 font-bold" />}>
-                <Plus className="w-3.5 h-3.5 mr-1" /> {language === 'ta' ? "பணியாளரை சேர்க்க" : "Onboard Staff"}
-              </DialogTrigger>
-              <DialogContent className="max-w-md text-slate-800">
-                <form onSubmit={handleCreateStaff}>
-                  <DialogHeader>
-                    <DialogTitle>Onboard Organization Staff</DialogTitle>
-                    <CardDescription>Creates an enterprise account profile with pre-mapped security role scopes.</CardDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="space-y-1.5">
-                      <Label>Full Employee Name</Label>
-                      <Input 
-                        placeholder="e.g. Sandeep Varma" 
-                        value={newStaff.name} 
-                        onChange={e => setNewStaff({...newStaff, name: e.target.value})} 
-                        required 
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Company Email Address</Label>
-                      <Input
-                        type="email"
-                        placeholder="e.g. sandeep@enterprise.com" 
-                        value={newStaff.email} 
-                        onChange={e => setNewStaff({...newStaff, email: e.target.value})} 
-                        required 
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Operational Role Base</Label>
-                      <select 
-                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm text-[#1A1A1A]"
-                        value={newStaff.role}
-                        onChange={e => setNewStaff({...newStaff, role: e.target.value as Staff['role']})}
-                        required
-                      >
-                        <option value="admin">Super Admin (All Permissions)</option>
-                        <option value="inventory_manager">Inventory Manager (Stock & Batches)</option>
-                        <option value="billing_clerk">Billing Clerk (Payments & General Sales)</option>
-                        <option value="staff_viewer">Staff Viewer (Read Only View access)</option>
-                      </select>
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button type="submit" className="w-full bg-indigo-600 text-white rounded-xl">Onboard Staff Profile</Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader className="bg-slate-50">
-                  <TableRow>
-                    <TableHead className="font-bold text-xs text-slate-600">Employee Details</TableHead>
-                    <TableHead className="font-bold text-xs text-slate-600">Role Base Level</TableHead>
-                    <TableHead className="font-bold text-xs text-slate-600 text-center">Edit Items</TableHead>
-                    <TableHead className="font-bold text-xs text-slate-600 text-center">Mfg Batches</TableHead>
-                    <TableHead className="font-bold text-xs text-slate-600 text-center">Batch Recall</TableHead>
-                    <TableHead className="font-bold text-xs text-slate-600 text-center">Stock Adjust</TableHead>
-                    <TableHead className="font-bold text-xs text-slate-600 text-center">Billing/PMT</TableHead>
-                    <TableHead className="font-bold text-xs text-slate-600 text-center">Staff Admin</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {staff.map(member => (
-                    <TableRow key={member.id} className="hover:bg-slate-50/50">
-                      <TableCell className="py-3">
-                        <div className="font-bold text-xs text-slate-900">{member.name}</div>
-                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{member.email}</div>
-                        <div className="text-[9px] text-indigo-505 text-indigo-500 font-medium mt-0.5">Last: {member.lastActive}</div>
-                      </TableCell>
-                      <TableCell>
-                        <select
-                          className="h-7 text-[11px] font-bold rounded-lg border border-slate-200 bg-white text-slate-700 px-1 py-0.5"
-                          value={member.role}
-                          onChange={(e) => handleRoleChange(member.id, e.target.value as Staff['role'])}
-                        >
-                          <option value="admin">Admin</option>
-                          <option value="inventory_manager">Manager</option>
-                          <option value="billing_clerk">Billing Clerk</option>
-                          <option value="staff_viewer">Staff Viewer</option>
-                        </select>
-                      </TableCell>
-                      
-                      {/* Checkboxes for direct granularity tweak */}
-                      <TableCell className="text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={member.permissions.editInventory}
-                          onChange={() => handleTogglePermission(member.id, 'editInventory')}
-                          disabled={member.role === 'admin'}
-                          className="h-3.5 w-3.5 cursor-pointer accent-indigo-600 disabled:opacity-40"
-                        />
-                      </TableCell>
-                      
-                      <TableCell className="text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={member.permissions.manageBatches}
-                          onChange={() => handleTogglePermission(member.id, 'manageBatches')}
-                          disabled={member.role === 'admin'}
-                          className="h-3.5 w-3.5 cursor-pointer accent-indigo-600 disabled:opacity-40"
-                        />
-                      </TableCell>
-
-                      <TableCell className="text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={member.permissions.executeRecall}
-                          onChange={() => handleTogglePermission(member.id, 'executeRecall')}
-                          disabled={member.role === 'admin'}
-                          className="h-3.5 w-3.5 cursor-pointer accent-indigo-600 disabled:opacity-40"
-                        />
-                      </TableCell>
-
-                      <TableCell className="text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={member.permissions.makeAdjustments}
-                          onChange={() => handleTogglePermission(member.id, 'makeAdjustments')}
-                          disabled={member.role === 'admin'}
-                          className="h-3.5 w-3.5 cursor-pointer accent-indigo-600 disabled:opacity-40"
-                        />
-                      </TableCell>
-
-                      <TableCell className="text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={member.permissions.recordPayments}
-                          onChange={() => handleTogglePermission(member.id, 'recordPayments')}
-                          disabled={member.role === 'admin'}
-                          className="h-3.5 w-3.5 cursor-pointer accent-indigo-600 disabled:opacity-40"
-                        />
-                      </TableCell>
-
-                      <TableCell className="text-center">
-                        <input 
-                          type="checkbox" 
-                          checked={member.permissions.manageStaff}
-                          onChange={() => handleTogglePermission(member.id, 'manageStaff')}
-                          disabled={member.role === 'admin'}
-                          className="h-3.5 w-3.5 cursor-pointer accent-indigo-600 disabled:opacity-40"
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
   );
 }

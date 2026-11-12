@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Clock as DomainClock } from '../rules/clock';
 import { 
   Dialog, 
   DialogContent, 
@@ -121,9 +122,9 @@ export default function CustomerHistoryDialog({
 
     // Ensure we have at least 3 months for a cute visual timeline chart
     if (timelineChartData.length === 0) {
-      timelineChartData.push({ month: '2026-03', amount: 0 });
-      timelineChartData.push({ month: '2026-04', amount: 0 });
-      timelineChartData.push({ month: '2026-05', amount: 0 });
+      timelineChartData.push({ month: DomainClock.offsetMonthsString(-2), amount: 0 });
+      timelineChartData.push({ month: DomainClock.offsetMonthsString(-1), amount: 0 });
+      timelineChartData.push({ month: DomainClock.offsetMonthsString(0), amount: 0 });
     }
 
     return {

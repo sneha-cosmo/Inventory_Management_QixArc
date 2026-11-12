@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Clock } from '../rules/clock';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -83,52 +84,56 @@ export default function FinancialReportsPage({
   const [sortAsc, setSortAsc] = useState<boolean>(false);
 
   // --- Date/Period Filter Logic ---
-  const currentYearPrefix = '2026';
-  const currentMonthPrefix = '2026-05';
+  const currentYearPrefix = useMemo(() => String(Clock.getCurrentDate().getFullYear()), []);
+  const currentMonthPrefix = useMemo(() => Clock.getCurrentYearMonth(), []);
+  const thirtyDaysAgo = useMemo(() => Clock.offsetDays(-30), []);
 
   const filteredSalesOrders = useMemo(() => {
     return salesOrders.filter(so => {
       if (period === 'last30') {
-        // Fallback for mock data (include 2024-05 so initial records populate)
-        return so.date.startsWith(currentMonthPrefix) || so.date.startsWith('2024-05');
+        const orderDate = new Date(so.date);
+        return orderDate >= thirtyDaysAgo || so.date.startsWith(currentMonthPrefix);
       }
       if (period === 'ytd') {
-        return so.date.startsWith(currentYearPrefix) || so.date.startsWith('2024');
+        return so.date.startsWith(currentYearPrefix);
       }
       if (period === 'q1') {
-        // Simulate quarter range or mock
-        return so.date.includes('-01-') || so.date.includes('-02-') || so.date.includes('-03-') || so.date.includes('-04-') || so.date.includes('-05-');
+        const month = parseInt(so.date.substring(5, 7), 10);
+        return month >= 1 && month <= 3;
       }
       return true; // 'all'
     });
-  }, [salesOrders, period]);
+  }, [salesOrders, period, currentMonthPrefix, currentYearPrefix, thirtyDaysAgo]);
 
   const filteredPurchaseOrders = useMemo(() => {
     return purchaseOrders.filter(po => {
       if (period === 'last30') {
-        return po.date.startsWith(currentMonthPrefix) || po.date.startsWith('2026-05') || po.date.startsWith('2024-05');
+        const orderDate = new Date(po.date);
+        return orderDate >= thirtyDaysAgo || po.date.startsWith(currentMonthPrefix);
       }
       if (period === 'ytd') {
-        return po.date.startsWith(currentYearPrefix) || po.date.startsWith('2026') || po.date.startsWith('2024');
+        return po.date.startsWith(currentYearPrefix);
       }
       if (period === 'q1') {
-        return po.date.includes('-01-') || po.date.includes('-02-') || po.date.includes('-03-') || po.date.includes('-04-') || po.date.includes('-05-');
+        const month = parseInt(po.date.substring(5, 7), 10);
+        return month >= 1 && month <= 3;
       }
       return true;
     });
-  }, [purchaseOrders, period]);
+  }, [purchaseOrders, period, currentMonthPrefix, currentYearPrefix, thirtyDaysAgo]);
 
   const filteredProdOrders = useMemo(() => {
     return orders.filter(o => {
       if (period === 'last30') {
-        return o.date.startsWith(currentMonthPrefix) || o.date.startsWith('2026-05') || o.date.startsWith('2024-05');
+        const orderDate = new Date(o.date);
+        return orderDate >= thirtyDaysAgo || o.date.startsWith(currentMonthPrefix);
       }
       if (period === 'ytd') {
-        return o.date.startsWith(currentYearPrefix) || o.date.startsWith('2024');
+        return o.date.startsWith(currentYearPrefix);
       }
       return true;
     });
-  }, [orders, period]);
+  }, [orders, period, currentMonthPrefix, currentYearPrefix, thirtyDaysAgo]);
 
   // --- Dynamic Cost Price mapping ---
   const itemCostsAndASP = useMemo(() => {
