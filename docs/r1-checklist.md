@@ -12,9 +12,14 @@ This document details the operational verifications, test results, and go-live s
 | **Comprehensive 12-Area Scenarios** (`src/rules/__tests__/scenarios.test.ts`) | Verifies all 12 operational domains and security constraints | 12 tests | **PASS (100%)** |
 | **i18n Key Parity** (`src/rules/__tests__/i18nParity.test.ts`) | Asserts 100% key and value match between English & Tamil | 2 tests | **PASS (100%)** |
 | **Injectable Clock Determinism** (`src/rules/__tests__/clockInjection.test.ts`) | Verifies batch expiry & invoice status shifts predictably | 4 tests | **PASS (100%)** |
-| **Typecheck** (`tsc -b`) | Verifies strict TypeScript compilation without type assertions | 0 errors | **PASS (100%)** |
-| **Lint** (`tsc -b`) | Verifies syntax, imports, and interface compatibility | 0 errors | **PASS (100%)** |
-| **Production Build** (`vite build`) | Verifies client bundle production build | Exit 0 | **PASS (100%)** |
+| **E-Way Bill Rules & Provider** (`ewayBillRules.test.ts` & `tests/ewayBill.test.ts`) | Verifies applicability, validity, vehicle plate, challans & provider | 48 tests | **PASS (100%)** |
+| **Bulk Import & Sample Generator** (`bulkImport.test.ts`, `sampleFile.test.ts`, `bulkImportValidation.test.ts`, `acceptance.test.ts`) | Verifies EAN-13, HSN/GST/UQC, incomplete warehouse & skip notices | 37 tests | **PASS (100%)** |
+| **Batch Import & Notifications** (`batchImportValidation.test.ts`, `batchAcceptance.test.ts`, `notification.test.ts`) | Verifies flexible dates, expiry bands, deduplication & role filters | 28 tests | **PASS (100%)** |
+| **RBAC & Permission Matrix** (`roleEnforcement.test.ts`, `permissionsMatrix.test.ts`) | Verifies 5 canonical roles, `can()`, handler refusal & audit logs | 25 tests | **PASS (100%)** |
+| **Total Vitest Suite** (`npm test`) | All 15 test files executed cleanly by Vitest | 161 tests | **PASS (100%)** |
+| **Typecheck** (`npm run typecheck`) | `tsc -b` strict TypeScript compilation | 0 errors | **PASS (100%)** |
+| **Lint & Date Check** (`npm run lint`) | ESLint flat config (`@typescript-eslint` + `react-hooks`) + `check-no-literal-dates.mjs` | 0 errors | **PASS (100%)** |
+| **Production Build** (`npm run build`) | `tsc -b && vite build` client bundle output | Exit 0 | **PASS (100%)** |
 
 ---
 

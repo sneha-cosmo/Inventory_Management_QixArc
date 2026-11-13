@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { can, hasPermission, getPermissionDeniedTooltip, PermissionKey, StaffRole } from '../src/rules/permissions';
+import { can, hasPermission, getPermissionDeniedTooltip, PermissionKey } from '../src/rules/permissions';
 import { createAuditEvent } from '../src/rules/audit';
 import { Staff } from '../src/types';
 

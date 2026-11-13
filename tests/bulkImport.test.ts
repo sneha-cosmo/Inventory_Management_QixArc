@@ -6,16 +6,14 @@ import {
   validateBulkImportRows,
   suggestEan13CheckDigit,
   calculateEan13CheckDigit,
-  validateEan13CheckDigit,
-  TARGET_FIELDS
+  validateEan13CheckDigit
 } from '../src/utils/bulkImport';
 import {
   DEFAULT_TAX_SETTINGS,
   TaxSettings,
-  mapUnitToUqc,
-  STANDARD_GST_RATES
+  mapUnitToUqc
 } from '../src/rules/tax';
-import { Category, Warehouse, InventoryItem } from '../src/types';
+import { Category, Warehouse } from '../src/types';
 
 describe('Inventory Bulk Import Hardening & Compliance (tests/bulkImport.test.ts)', () => {
   const mockCategories: Category[] = [

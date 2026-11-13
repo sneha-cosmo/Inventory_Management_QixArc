@@ -4,9 +4,6 @@ import {
   DEFAULT_EWAY_BILL_SETTINGS,
   determineEwbApplicability,
   checkEwbReadiness,
-  validateVehiclePlate,
-  calculateEwbValidity,
-  canCancelEwb,
   createDeliveryChallanForTransfer
 } from '../src/rules/ewayBill';
 import {
@@ -22,8 +19,7 @@ import {
   InventoryItem,
   EwayBillGenerateRequest,
   EwayBill,
-  SalesOrder,
-  Invoice
+  SalesOrder
 } from '../src/types';
 
 describe('E-Way Bill Comprehensive Specification Verification (tests/ewayBill.test.ts)', () => {

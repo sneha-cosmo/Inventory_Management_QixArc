@@ -5,7 +5,6 @@ import {
   generateSampleFile,
   getSampleFileName,
   pickDistinctProducts,
-  BLANK_TEMPLATE_HEADERS,
   SAMPLE_PRODUCTS_POOL
 } from '../src/features/import/sampleFile';
 import {

@@ -24,14 +24,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run unit & scenario tests
-        run: npm test
-
       - name: TypeScript typecheck
         run: npm run typecheck
 
-      - name: ESLint / Code check
+      - name: ESLint & literal-date check
         run: npm run lint
+
+      - name: Run unit & scenario tests
+        run: npm test
 
       - name: Build production bundle
         run: npm run build

@@ -4,11 +4,9 @@ import * as path from 'path';
 import {
   can,
   CANONICAL_ROLES,
-  ROLE_PERMISSIONS,
   PermissionKey,
   getUserPermissionSwitch,
-  setUserPermissionSwitch,
-  getRoleDefaultSwitches
+  setUserPermissionSwitch
 } from '../src/rules/permissions';
 
 describe('Permissions Matrix & Unified can() Evaluator', () => {

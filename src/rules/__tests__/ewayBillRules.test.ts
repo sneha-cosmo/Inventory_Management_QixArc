@@ -3,7 +3,6 @@ import { Clock } from '../clock';
 import {
   DEFAULT_EWAY_BILL_SETTINGS,
   determineEwbApplicability,
-  checkEwbReadiness,
   validateVehiclePlate,
   calculateEwbValidity,
   canCancelEwb,

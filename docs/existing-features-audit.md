@@ -128,5 +128,18 @@
    - Fix Dashboard Net Profit/Loss negative formatting and add chart empty states.
    - Ensure inter-warehouse transfers retain total cross-warehouse stock during transit.
 5. **Data Foundation Extensions:** Add HSN, GST rate, UQC, structured address, company/warehouse GSTIN, configurable turnover band settings, and invoice format validation.
-6. **Vitest Test Suite:** Implement worked examples (reorder, FIFO, variance, GST, transfer), scenario tests, i18n parity test, and clock injection test.
-7. **Honest Labeling & Documentation:** Add simulation badges and disclaimers; compile `docs/manual-vs-app.md` and `docs/r1-checklist.md`.
+6. **Vitest Test Suite:** Implement worked examples (reorder, FIFO, variance, GST, transfer), scenario tests, i18n parity test, clock injection test, and migrate all standalone utility scripts into `tests/*.test.ts`.
+7. **Honest Labeling & Documentation:** Add simulation badges and disclaimers; compile `docs/manual-vs-app.md`, `docs/permissions-audit.md`, and `docs/r1-checklist.md`.
+
+---
+
+## 5. Post-Review Hardening Summary (Fixes 1–5)
+
+| Audit Item | Resolution | Verification |
+|---|---|---|
+| **Role Enforcement** | Audited 35 actions across all pages/dialogs in `docs/permissions-audit.md`; disabled unauthorized UI controls with tooltips and added handler guards writing `"Permission denied"` 6-field audit events. | `tests/roleEnforcement.test.ts` (12 tests) |
+| **Single Permission Evaluator** | Replaced fragmented `.permissions[...]` reads with single authoritative `can(user, permission)` evaluator over 5 canonical roles and 9 matrix switches. | `tests/permissionsMatrix.test.ts` (13 tests) |
+| **Zero Fixed Dates** | Eliminated literal date strings across `src/` (`App.tsx`, `batchImport.ts`, `DeadStockDamagedPage.tsx`, `EasyTaxFilingPanel.tsx`, `SalesForecastingPanel.tsx`, etc.) in favor of `Clock` (`src/rules/clock.ts`) + automated `scripts/check-no-literal-dates.mjs`. | `scripts/check-no-literal-dates.mjs` |
+| **Migrated Script Tests** | Converted 5 hidden `src/utils/*.test.ts` scripts into Vitest suites in `tests/` (`acceptance`, `batchAcceptance`, `batchImportValidation`, `bulkImportValidation`, `notification`), fixed duplicate-SKU skip notice & error CSV column parity, and deleted `src/utils/runAllTests.ts`. | `npm test` (15 files, 161 tests) |
+| **Real ESLint & CI Pipeline** | Added ESLint 10 flat config (`eslint.config.js`) enforcing `@typescript-eslint` + `react-hooks` (`rules-of-hooks`, `exhaustive-deps`), wired `npm run lint` to run ESLint + date guard, and standardized CI (`npm ci`, `typecheck`, `lint`, `test`, `build`). | `.github/workflows/ci.yml` |
+

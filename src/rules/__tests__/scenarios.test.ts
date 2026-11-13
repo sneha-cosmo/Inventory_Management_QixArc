@@ -9,9 +9,8 @@ import {
   processTransferReceipt 
 } from '../stock';
 import { classifyExpiry } from '../expiry';
-import { classifyStockAging, isDeadStock } from '../aging';
 import { calculateFifoConsumption, calculateCostVariance } from '../valuation';
-import { calculateGst, validateGstin, validateHsnCode } from '../tax';
+import { validateGstin, validateHsnCode } from '../tax';
 import { validateInvoiceNumber, computeInvoiceStatus } from '../invoice';
 import { hasPermission } from '../permissions';
 import { createAuditEvent } from '../audit';
